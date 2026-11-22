@@ -116,6 +116,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenMappings: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenSaveSync: () -> Unit,
     onOpenLocalLibrary: () -> Unit,
     onOpenFirmware: () -> Unit,
     onOpenControls: () -> Unit,
@@ -153,6 +154,8 @@ fun SettingsScreen(
             SettingRow(stringResource(R.string.settings_rescan), subtitle = stringResource(R.string.settings_rescan_hint), onClick = { vm.rescan() })
             SettingRow(stringResource(R.string.settings_bios), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = onOpenFirmware)
             SettingRow(stringResource(R.string.settings_bios_path), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = { dialog = "bios" })
+
+            SettingRow(stringResource(R.string.settings_save_sync), subtitle = stringResource(R.string.settings_save_sync_hint), onClick = onOpenSaveSync)
 
             SectionHeader(stringResource(R.string.settings_downloads))
             SettingRow(stringResource(R.string.settings_concurrency), subtitle = s.concurrency.toString(), onClick = { dialog = "concurrency" })

@@ -11,6 +11,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object SettingsRoute
 @Serializable data object FolderMappingsRoute
 @Serializable data object DiagnosticsRoute
+@Serializable data object SaveSyncSettingsRoute
 @Serializable data object LocalLibraryRoute
 @Serializable data object FirmwareRoute
 @Serializable data object ButtonMapRoute

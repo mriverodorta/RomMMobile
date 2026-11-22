@@ -87,11 +87,7 @@ object StorageLocations {
     /** Android TV / Fire TV frequently ship without any SAF picker at all. */
     fun canOpenTree(context: Context): Boolean = openTreeIntent().resolveActivity(context.packageManager) != null
 
-    /**
-     * Real filesystem path behind a SAF tree URI, when there is one. With All files access we
-     * prefer it: direct writes are faster than SAF and the files are immediately visible to
-     * every emulator, which is the whole point of the app.
-     */
+    /** Physical path used to match ES-DE settings to a granted local tree. */
     fun treeUriToPath(uri: Uri): String? = runCatching {
         val docId = DocumentsContract.getTreeDocumentId(uri)
         val parts = docId.split(":", limit = 2)
@@ -101,18 +97,20 @@ object StorageLocations {
         if (rel.isEmpty()) base else "$base/$rel"
     }.getOrNull()
 
-    /** Direct path when it is usable, otherwise the SAF tree the picker gave us. */
-    fun rootFromTree(context: Context, uri: Uri): StorageRoot {
-        if (hasAllFilesAccess(context)) {
-            val path = treeUriToPath(uri)
-            if (path != null && (File(path).isDirectory || File(path).mkdirs())) {
-                val probe = File(path, ".romm_write_test")
-                val writable = runCatching { probe.writeText("ok"); probe.delete(); true }.getOrDefault(false)
-                if (writable) return StorageRoot.Direct(path)
-            }
-        }
-        return StorageRoot.Saf(uri.toString())
-    }
+    internal fun treeCovering(context: Context, path: String, writable: Boolean): Pair<StorageRoot.Saf, String>? =
+        context.contentResolver.persistedUriPermissions.asSequence()
+            .filter { it.isReadPermission && (!writable || it.isWritePermission) }
+            .filter { it.uri.authority == "com.android.externalstorage.documents" }
+            .mapNotNull { grant ->
+                val base = treeUriToPath(grant.uri)?.trimEnd('/') ?: return@mapNotNull null
+                val relative = when {
+                    path == base -> ""
+                    path.startsWith("$base/") -> path.removePrefix("$base/")
+                    else -> return@mapNotNull null
+                }
+                if (relative.split('/').any { it == ".." || it == "." }) return@mapNotNull null
+                StorageRoot.Saf(grant.uri.toString()) to relative
+            }.minByOrNull { it.second.length }
 
     fun persistTree(context: Context, uri: Uri) {
         runCatching {

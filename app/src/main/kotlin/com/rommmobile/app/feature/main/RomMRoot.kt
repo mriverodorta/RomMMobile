@@ -1,5 +1,6 @@
 package com.rommmobile.app.feature.main
 
+import com.rommmobile.app.feature.saves.EmulatorAccess
 import com.rommmobile.app.feature.controls.ButtonMapScreen
 import android.app.Activity
 import androidx.compose.foundation.background
@@ -10,6 +11,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.rommmobile.app.feature.saves.hasEmulatorUsageAccess
+import com.rommmobile.app.feature.saves.openEmulatorUsageSettings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -19,6 +29,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.rommmobile.app.R
 import androidx.compose.runtime.getValue
@@ -46,11 +57,14 @@ import com.rommmobile.app.feature.settings.FirmwareScreen
 import com.rommmobile.app.feature.settings.FolderMappingsScreen
 import com.rommmobile.app.feature.settings.LocalLibraryScreen
 import com.rommmobile.app.feature.settings.SettingsScreen
+import com.rommmobile.app.feature.settings.SaveSyncSettingsScreen
 
 @Composable
 fun RomMRoot(intentEpoch: Int = 0) {
     val appVm: AppViewModel = hiltViewModel()
     val start by appVm.startDestination.collectAsStateWithLifecycle()
+    val enabled by appVm.saveSyncEnabled.collectAsStateWithLifecycle(initialValue = false)
+    if (enabled && start == StartDestination.HOME) UsageAccessPrompt()
     val colors = RommTheme.colors
 
     CompositionLocalProvider(LocalGamepad provides appVm.gamepad) {
@@ -62,6 +76,28 @@ fun RomMRoot(intentEpoch: Int = 0) {
             ToastHost(appVm.toaster, Modifier.fillMaxSize())
         }
     }
+}
+
+@Composable
+private fun UsageAccessPrompt() {
+    val context = LocalContext.current
+    var granted by rememberSaveable { mutableStateOf(hasEmulatorUsageAccess(context)) }
+    var dismissed by rememberSaveable { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { granted = hasEmulatorUsageAccess(context) }
+    if (granted || dismissed) return
+    AlertDialog(
+        onDismissRequest = { dismissed = true },
+        title = { Text(stringResource(R.string.save_sync_usage_title)) },
+        text = { Text(stringResource(R.string.save_sync_usage_needed)) },
+        confirmButton = {
+            TextButton(onClick = { openEmulatorUsageSettings(context) }) {
+                Text(stringResource(R.string.save_sync_usage_open))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { dismissed = true }) { Text(stringResource(R.string.emulator_access_later)) }
+        },
+    )
 }
 
 @Composable
@@ -112,6 +148,12 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
     // so every real back - library to platforms, game to library, dialogs, the keyboard dismiss in
     // gamepadTextField - is untouched.
     val backEntry by navController.currentBackStackEntryAsState()
+    val destination = backEntry?.destination
+    if (destination != null && !destination.hasRoute<OnboardingRoute>() &&
+        !destination.hasRoute<LoginRoute>() && !destination.hasRoute<DiagnosticsRoute>() && !destination.hasRoute<SaveSyncSettingsRoute>()
+    ) {
+        EmulatorAccess(prompt = true)
+    }
     val atRoot = backEntry != null && navController.previousBackStackEntry == null
     // Long.MIN_VALUE, not 0: armedAt is compared against uptime, and 0 is a real uptime.
     var armedAt by remember { mutableLongStateOf(Long.MIN_VALUE) }
@@ -179,6 +221,7 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
                 onBack = { gate.pop() },
                 onOpenMappings = { gate.go(FolderMappingsRoute) },
                 onOpenDiagnostics = { gate.go(DiagnosticsRoute) },
+                onOpenSaveSync = { gate.go(SaveSyncSettingsRoute) },
                 onOpenLocalLibrary = { gate.go(LocalLibraryRoute) },
                 onOpenFirmware = { gate.go(FirmwareRoute) },
                 onOpenControls = { gate.go(ButtonMapRoute) },
@@ -187,6 +230,7 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
             )
         }
         composable<FolderMappingsRoute> { FolderMappingsScreen(onBack = { gate.pop() }) }
+        composable<SaveSyncSettingsRoute> { SaveSyncSettingsScreen(onBack = { gate.pop() }) }
         composable<DiagnosticsRoute> { DiagnosticsScreen(onBack = { gate.pop() }) }
         composable<LocalLibraryRoute> { LocalLibraryScreen(onBack = { gate.pop() }) }
         composable<FirmwareRoute> { FirmwareScreen(onBack = { gate.pop() }) }

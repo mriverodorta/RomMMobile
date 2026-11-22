@@ -16,11 +16,14 @@ import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.rommmobile.app.core.design.RommTheme
 import com.rommmobile.app.core.design.ThemeMode
 import com.rommmobile.app.core.input.GamepadBus
 import com.rommmobile.app.data.prefs.SettingsStore
 import com.rommmobile.app.feature.main.RomMRoot
+import com.rommmobile.app.feature.saves.SaveSyncControl
+import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -32,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var gamepad: GamepadBus
     @Inject lateinit var settings: SettingsStore
+    @Inject lateinit var saveSync: SaveSyncControl
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -53,6 +57,11 @@ class MainActivity : ComponentActivity() {
                 RomMRoot(intentEpoch = pendingIntentEpoch.intValue)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch { saveSync.startIfEnabled() }
     }
 
     /** singleTask: a notification tap on a live app arrives here, not in onCreate. */

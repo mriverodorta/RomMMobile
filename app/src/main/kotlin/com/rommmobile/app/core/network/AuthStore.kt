@@ -21,6 +21,7 @@ data class AuthState(
     /** Epoch millis; null when the token has no known expiry (client tokens). */
     val accessExpiresAt: Long? = null,
     val password: String? = null,
+    val deviceId: String? = null,
 ) {
     val isLoggedIn: Boolean get() = mode != AuthMode.NONE
 
@@ -51,6 +52,7 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
         const val ACCESS = "auth_access"
         const val REFRESH = "auth_refresh"
         const val EXPIRES = "auth_expires"
+        const val DEVICE = "auth_device_id"
         const val PASSWORD = "auth_password"
     }
 
@@ -71,6 +73,7 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
             refreshToken = secure.get(K.REFRESH),
             accessExpiresAt = secure.get(K.EXPIRES)?.toLongOrNull(),
             password = if (mode == AuthMode.BASIC) secure.get(K.PASSWORD) else null,
+            deviceId = if (mode == AuthMode.CLIENT_TOKEN) secure.get(K.DEVICE) else null,
         )
     }
 
@@ -79,8 +82,8 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
         persist(AuthState(AuthMode.OAUTH, username, accessToken, refreshToken, expiresAt))
     }
 
-    fun setClientToken(token: String, username: String?) {
-        persist(AuthState(AuthMode.CLIENT_TOKEN, username, token, null, null))
+    fun setClientToken(token: String, username: String?, deviceId: String? = null) {
+        persist(AuthState(AuthMode.CLIENT_TOKEN, username, token, deviceId = deviceId))
     }
 
     fun setBasic(username: String, password: String) {
@@ -115,6 +118,7 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
         secure.put(K.REFRESH, s.refreshToken)
         secure.put(K.EXPIRES, s.accessExpiresAt?.toString())
         secure.put(K.PASSWORD, s.password)
+        secure.put(K.DEVICE, s.deviceId)
         _state.value = s
     }
 }

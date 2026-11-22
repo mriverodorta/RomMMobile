@@ -13,11 +13,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.rommmobile.app"
+        applicationId = "com.maikeldorta.rommmobiles"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.0.3"
+        versionCode = 7
+        versionName = "1.0.3-beta.1"
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
         resourceConfigurations += listOf("en", "it")
@@ -28,8 +28,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Sideload build: sign with the debug key until the user provides a keystore.
-            signingConfig = signingConfigs.getByName("debug")
+            // Release APKs are signed separately with the production key.
         }
         debug {
             applicationIdSuffix = ".debug"

@@ -228,4 +228,8 @@ data class FirmwareDto(
 )
 
 /** Read scopes the app needs; write scopes are never requested. */
-val READ_SCOPES = listOf("me.read", "roms.read", "platforms.read", "collections.read", "firmware.read", "assets.read", "roms.user.read")
+val SAVE_SYNC_SCOPES = setOf("assets.read", "assets.write", "devices.read", "devices.write")
+
+val LOGIN_SCOPES = listOf(
+    "me.read", "roms.read", "platforms.read", "collections.read", "firmware.read", "roms.user.read",
+) + SAVE_SYNC_SCOPES

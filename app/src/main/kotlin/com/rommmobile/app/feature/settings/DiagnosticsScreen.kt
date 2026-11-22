@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
@@ -38,7 +37,6 @@ import com.rommmobile.app.core.design.RommTheme
 import com.rommmobile.app.core.design.RommTopBar
 import com.rommmobile.app.core.design.SectionHeader
 import com.rommmobile.app.core.design.SettingRow
-import com.rommmobile.app.core.design.gamepadFocusRing
 import com.rommmobile.app.core.design.gamepadFocusIcon
 import com.rommmobile.app.core.input.rightStickScroll
 import com.rommmobile.app.core.network.AuthStore
@@ -57,7 +55,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -122,7 +119,7 @@ class DiagnosticsViewModel @Inject constructor(
         Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "RomMMobile log")
+            putExtra(Intent.EXTRA_SUBJECT, "${context.getString(R.string.app_name)} log")
             putExtra(Intent.EXTRA_TEXT, _info.value.rows.joinToString("\n") { "${it.first}: ${it.second}" })
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

@@ -16,7 +16,8 @@ import com.rommmobile.app.data.api.DeviceAuthInitDto
 import com.rommmobile.app.data.api.DeviceInitBody
 import com.rommmobile.app.data.api.DeviceTokenBody
 import com.rommmobile.app.data.api.ExchangeBody
-import com.rommmobile.app.data.api.READ_SCOPES
+import com.rommmobile.app.data.api.SAVE_SYNC_SCOPES
+import com.rommmobile.app.data.api.LOGIN_SCOPES
 import com.rommmobile.app.data.api.RommApi
 import com.rommmobile.app.data.api.UserDto
 import com.rommmobile.app.di.ApiClient
@@ -103,31 +104,27 @@ class AuthRepository @Inject constructor(
         serverStore.setServerVersion(version)
     }
 
-    /**
-     * Username + password: OAuth2 password grant with read scopes (no password stored), then
-     * Basic as fallback for servers where /api/token refuses the request.
-     */
+    /** The password grant requests library and save sync scopes without storing the password. */
     suspend fun loginWithPassword(username: String, password: String): Result<Unit> = withVerification {
         val oauth = apiCall {
-            val t = api.token(grantType = "password", username = username, password = password, scope = READ_SCOPES.joinToString(" "))
-            authStore.setOAuth(t.accessToken, t.refreshToken, t.expires, username)
+            val token = api.token(
+                grantType = "password",
+                username = username,
+                password = password,
+                scope = LOGIN_SCOPES.joinToString(" "),
+            )
+            authStore.setOAuth(token.accessToken, token.refreshToken, token.expires, username)
             verifyMe()
         }
         if (oauth.isSuccess) return@withVerification Result.success(Unit)
-        val err = oauth.exceptionOrNull() as? ApiException
-        log.w("Auth", "token grant failed: ${err?.message}")
-        if (err != null && (err.kind == ApiErrorKind.UNAUTHORIZED || (err.httpCode == 400 && err.detail?.contains("password", true) == true))) {
-            authStore.clear()
-            return@withVerification Result.failure(ApiException(ApiErrorKind.UNAUTHORIZED, detail = err.detail))
+        val error = oauth.exceptionOrNull() as? ApiException
+        log.w("Auth", "Token grant failed: ${error?.message}")
+        authStore.clear()
+        if (error?.httpCode == 400 && error.detail?.contains("password", true) == true) {
+            Result.failure(ApiException(ApiErrorKind.UNAUTHORIZED, detail = error.detail))
+        } else {
+            Result.failure(error ?: ApiException(ApiErrorKind.UNKNOWN))
         }
-        if (err != null && err.kind in setOf(ApiErrorKind.OFFLINE, ApiErrorKind.TIMEOUT, ApiErrorKind.NON_JSON, ApiErrorKind.CLEARTEXT_BLOCKED, ApiErrorKind.TLS)) {
-            authStore.clear()
-            return@withVerification Result.failure(err)
-        }
-        authStore.setBasic(username, password)
-        val basic = apiCall { verifyMe(); Unit }
-        if (basic.isFailure) authStore.clear()
-        basic
     }
 
     /** Marks the window in which a 401 means "wrong credentials", not "session expired". */
@@ -188,7 +185,7 @@ class AuthRepository @Inject constructor(
                 client = "RomMMobile",
                 platform = "android",
                 clientVersion = BuildConfig.VERSION_NAME,
-                requestedScopes = READ_SCOPES,
+                requestedScopes = LOGIN_SCOPES,
             )
         )
     }
@@ -197,9 +194,14 @@ class AuthRepository @Inject constructor(
     suspend fun deviceFlowPoll(deviceCode: String): Result<Boolean> = withVerification {
         val r = apiCall { api.deviceToken(DeviceTokenBody(deviceCode)) }
         r.getOrNull()?.let { t ->
-            authStore.setClientToken(t.accessToken, null)
+            authStore.setClientToken(t.accessToken, null, t.deviceId)
             val me = apiCall { verifyMe() }
             if (me.isFailure) { authStore.clear(); return Result.failure(me.exceptionOrNull()!!) }
+            // The user can approve only a subset. Keep the valid session and let save sync
+            // explain which access is missing instead of creating another paired device.
+            if (!t.scopes.containsAll(SAVE_SYNC_SCOPES)) {
+                log.i("Auth", "Paired with limited access; save sync scopes were not all approved")
+            }
             return Result.success(true)
         }
         val e = r.exceptionOrNull() as ApiException

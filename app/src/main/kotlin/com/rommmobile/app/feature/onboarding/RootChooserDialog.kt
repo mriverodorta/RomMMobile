@@ -12,11 +12,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -75,7 +75,7 @@ fun RootChooserDialog(
     val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             StorageLocations.persistTree(context, uri)
-            onChosen(StorageLocations.rootFromTree(context, uri))
+            onChosen(StorageRoot.Saf(uri.toString()))
         }
     }
     val settingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
@@ -105,7 +105,7 @@ fun RootChooserDialog(
                 Spacer(Modifier.height(6.dp))
                 val intent = remember { StorageLocations.allFilesAccessIntent(context) }
                 if (intent != null) {
-                    Button(onClick = { settingsLauncher.launch(intent) }, modifier = Modifier.gamepadFocusRing(PillShape)) {
+                    TextButton(onClick = { settingsLauncher.launch(intent) }, modifier = Modifier.gamepadFocusRing(PillShape)) {
                         Icon(Icons.Rounded.FolderOpen, null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.root_allfiles_grant))

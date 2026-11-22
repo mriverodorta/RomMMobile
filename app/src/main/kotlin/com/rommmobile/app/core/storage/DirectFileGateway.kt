@@ -27,6 +27,9 @@ class DirectFileGateway(override val root: StorageRoot.Direct) : FileGateway {
         return d.isDirectory || d.mkdirs()
     }
 
+    override fun openInput(relDir: String, name: String) =
+        File(dir(relDir), name).takeIf { it.isFile }?.inputStream()
+
     override fun openOutput(relDir: String, name: String): OutputStream {
         ensureDir(relDir)
         return FileOutputStream(File(dir(relDir), name))

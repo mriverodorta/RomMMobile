@@ -79,7 +79,80 @@ class SafFileGateway(private val context: Context, override val root: StorageRoo
         return children(id).filterNot { it.name.startsWith(".") }.map { FileInfo(it.name, it.isDir, it.size, it.modified) }
     }
 
+    internal fun saveDirectoryObserverUri(relDir: String): Uri? =
+        dirDocId(relDir, create = false)?.let { DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, it) }
+
+    private fun documentUri(child: Child) = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.docId)
+
+    private fun rename(child: Child, name: String): Uri =
+        checkNotNull(DocumentsContract.renameDocument(resolver, documentUri(child), name)) {
+            "Could not publish save $name"
+        }
+
+    private val saveBackupPrefix = ".rommmobiles-previous-"
+
+    internal fun recoverSaveReplacements(relDir: String) {
+        val dir = dirDocId(relDir, create = false) ?: return
+        val entries = children(dir)
+        for (backup in entries.filter { !it.isDir && it.name.startsWith(saveBackupPrefix) }) {
+            val name = backup.name.removePrefix(saveBackupPrefix)
+            if (name.isBlank() || name.startsWith(".")) continue
+            val current = entries.firstOrNull { it.name == name }
+            if (current == null) {
+                rename(backup, name)
+            } else if (!current.isDir && current.size > 0) {
+                DocumentsContract.deleteDocument(resolver, documentUri(backup))
+            }
+        }
+    }
+
+    internal fun replaceSave(
+        relDir: String,
+        name: String,
+        bytes: ByteArray,
+        mayReplace: () -> Boolean,
+    ): Boolean {
+        val previousName = saveBackupPrefix + name
+        val stagingName = ".rommmobiles-incoming-$name"
+        fun remove(file: String) {
+            childByName(relDir, file)?.let {
+                check(DocumentsContract.deleteDocument(resolver, documentUri(it)))
+            }
+        }
+        val existing = childByName(relDir, name)
+        // Keep an interrupted replacement's original until its destination can be inspected.
+        check(childByName(relDir, previousName) == null) { "A previous save replacement needs recovery." }
+        remove(stagingName)
+        openOutput(relDir, stagingName).use { it.write(bytes) }
+        val staged = checkNotNull(childByName(relDir, stagingName))
+        val complete = resolver.openInputStream(documentUri(staged))?.buffered()?.use { input ->
+            bytes.all { input.read() == (it.toInt() and 0xff) } && input.read() == -1
+        } == true
+        check(complete) { "Could not verify the staged save." }
+        if (!mayReplace()) {
+            remove(stagingName)
+            return false
+        }
+        if (existing != null) rename(existing, previousName)
+        try {
+            rename(staged, name)
+        } catch (failure: Exception) {
+            if (childByName(relDir, name) == null) {
+                childByName(relDir, previousName)?.let { rename(it, name) }
+            }
+            throw failure
+        }
+        // The original also exists in the app's private recovery archive.
+        remove(previousName)
+        return true
+    }
+
     override fun ensureDir(relDir: String): Boolean = dirDocId(relDir, create = true) != null
+
+    override fun openInput(relDir: String, name: String): java.io.InputStream? {
+        val child = childByName(relDir, name)?.takeUnless { it.isDir } ?: return null
+        return resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(treeUri, child.docId))
+    }
 
     override fun openOutput(relDir: String, name: String): OutputStream {
         val dirId = dirDocId(relDir, create = true) ?: throw FileNotFoundException("Cannot create $relDir")

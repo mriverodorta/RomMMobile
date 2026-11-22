@@ -2,6 +2,7 @@ package com.rommmobile.app.core.storage
 
 import android.content.Context
 import java.io.File
+import java.io.InputStream
 import java.io.OutputStream
 
 data class FileInfo(
@@ -23,6 +24,7 @@ interface FileGateway {
     fun list(relDir: String): List<FileInfo>
     fun listDirs(relDir: String): List<String> = list(relDir).filter { it.isDirectory }.map { it.name }
     fun ensureDir(relDir: String): Boolean
+    fun openInput(relDir: String, name: String): InputStream?
     fun openOutput(relDir: String, name: String): OutputStream
     /** Moves a private temp file into place. Verified by size afterwards, never trusted blindly. */
     fun moveIn(src: File, relDir: String, name: String): Boolean

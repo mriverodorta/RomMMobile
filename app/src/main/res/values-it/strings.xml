@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RomMMobile</string>
+    <string name="save_sync_choose_emulator_folder">Scegli la cartella RetroArch</string>
+    <string name="save_sync_choose_emulator_folder_hint">Autorizza la cartella condivisa di RetroArch per i salvataggi e gli stati.</string>
+    <string name="save_sync_broad_storage">Accesso a tutti i file (facoltativo)</string>
+    <string name="app_name">RomMMobileS</string>
 
     <string name="section_platforms">Piattaforme</string>
     <string name="section_collections">Collezioni</string>
@@ -185,6 +188,9 @@
     <string name="theme_light">Chiaro</string>
     <string name="theme_system">Come il sistema</string>
     <string name="settings_advanced">Avanzate</string>
+    <string name="settings_save_sync">Sincronizzazione salvataggi e stati</string>
+    <string name="settings_save_sync_hint">Sincronizzazione in background, cartelle e ripristino</string>
+    <string name="save_sync_emulator_details">Avvii rilevati</string>
     <string name="settings_diagnostics">Diagnostica</string>
     <string name="settings_diagnostics_hint">Stato, ultimi download, log esportabile</string>
     <string name="settings_rerun_onboarding">Rifai la configurazione iniziale</string>
@@ -212,6 +218,34 @@
     <string name="local_delete_title">Eliminare il file?</string>
     <string name="local_delete_body">“%s” verrà rimosso dal device. Da qui si possono eliminare solo i file scaricati da questa app.</string>
 
+    <string name="save_sync_missing_scopes">RomM ha negato l’accesso ai salvataggi. Accedi di nuovo o controlla i permessi del token.</string>
+    <string name="save_sync_title">Sincronizzazione salvataggi RomM</string>
+    <string name="save_sync_enable">Sincronizzazione in background</string>
+    <string name="save_sync_description">Controlla le cartelle RetroArch verificate e carica i salvataggi e gli stati per le ROM corrispondenti.</string>
+    <string name="save_sync_watching">Controllo delle cartelle dei salvataggi…</string>
+    <string name="save_sync_paused">Servizio fermo. Tocca per riprendere.</string>
+    <string name="save_sync_no_folders">Nessuna cartella verificata dalla configurazione RetroArch. Controlla il rilevamento ES-DE.</string>
+    <string name="save_sync_now">Sincronizza ora</string>
+    <string name="save_sync_apply">Applica salvataggi e stati scaricati</string>
+    <string name="save_sync_apply_hint">Chiudi RetroArch prima di applicare i file in arrivo.</string>
+    <string name="save_sync_apply_warning">Chiudi completamente RetroArch. Prima di applicare gli stati, verifica che entrambi i dispositivi usino versioni compatibili dei core. RomMMobileS conserva una copia dei file sostituiti.</string>
+    <string name="save_sync_apply_confirm">RetroArch è chiuso</string>
+    <string name="save_sync_battery">Ottimizzazione batteria</string>
+    <string name="save_sync_battery_exempt">Android indica che RomMMobileS è esente dall’ottimizzazione della batteria.</string>
+    <string name="save_sync_battery_hint">Apri Informazioni app. Seleziona Batteria, poi Senza restrizioni se disponibile.</string>
+    <string name="save_sync_start_failed">Android non ha potuto avviare la sincronizzazione. Apri RomMMobileS e riprova.</string>
+    <string name="save_sync_notification">%1$d cartelle · %2$d in arrivo · %3$d conflitti</string>
+    <string name="save_sync_summary">%1$d cartelle · %2$d ROM collegate · %3$d caricati · %4$d in arrivo · %5$d applicati · %6$d conflitti · %7$d errori</string>
+    <string name="diag_esde">Rilevamento emulatori e salvataggi ES-DE</string>
+    <string name="diag_esde_folder">Cartella dati ES-DE</string>
+    <string name="diag_esde_loading">Verifica della configurazione…</string>
+    <string name="diag_esde_error">Impossibile leggere la configurazione. Seleziona la cartella dati ES-DE.</string>
+    <string name="diag_esde_choose">Seleziona la cartella con le impostazioni e le liste dei giochi.</string>
+    <string name="diag_esde_config_read">Configurazione RetroArch letta.</string>
+    <string name="diag_esde_config_unreadable">Configurazione RetroArch inaccessibile. Controlla le cartelle rilevate o scegline altre.</string>
+    <string name="diag_esde_saves">Salvataggi: %1$s</string>
+    <string name="diag_esde_states">Stati: %1$s</string>
+    <string name="diag_esde_unverified">Non verificato</string>
     <string name="diag_state">Stato</string>
     <string name="diag_downloads">Ultimi download</string>
     <string name="diag_log">Log</string>
@@ -289,7 +323,7 @@
     <string name="launcher_custom_desc">Solo RetroArch o altro frontend: come nomi cartella si usano quelli delle piattaforme RomM.</string>
     <string name="ob_storage_body">Scegli la cartella che il tuo frontend scansiona (per ES-DE di solito ROMs nella memoria interna o sulla SD). I download finiscono direttamente nella sottocartella giusta.</string>
     <string name="ob_storage_allfiles_ok">Accesso a tutti i file concesso: i file sono subito visibili a ogni emulatore.</string>
-    <string name="ob_storage_allfiles_missing">Senza l’accesso a tutti i file l’app ripiega sul selettore cartelle di sistema, più lento e assente su alcuni box TV.</string>
+    <string name="ob_storage_allfiles_missing">L’app usa solo le cartelle selezionate. L’accesso a tutti i file è facoltativo e può rilevare prima le modifiche ai salvataggi.</string>
     <string name="ob_storage_checking">Controllo scrittura…</string>
     <string name="ob_storage_writable">Scrivibile</string>
     <string name="ob_storage_not_writable">Non scrivibile: scegli un’altra cartella o concedi l’accesso</string>
@@ -299,7 +333,7 @@
     <string name="ob_summary_body">%1$d piattaforme su %2$d hanno già una cartella. Le altre vengono create al primo download; tocca una riga per cambiarla.</string>
 
     <string name="root_title">Cartella ROM</string>
-    <string name="root_allfiles_body">Per scrivere direttamente nelle cartelle del frontend l’app ha bisogno dell’“Accesso a tutti i file”. È lo stesso permesso che usa ES-DE.</string>
+    <string name="root_allfiles_body">Usa il selettore per autorizzare singole cartelle. L’accesso a tutti i file è facoltativo e permette di rilevare direttamente le modifiche.</string>
     <string name="root_allfiles_grant">Concedi accesso a tutti i file</string>
     <string name="root_allfiles_unavailable">Questo dispositivo non espone la schermata di accesso a tutti i file.</string>
     <string name="root_pick_saf">Scegli cartella</string>

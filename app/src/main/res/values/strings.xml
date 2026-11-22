@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">RomMMobile</string>
+    <string name="save_sync_choose_emulator_folder">Choose RetroArch folder</string>
+    <string name="save_sync_choose_emulator_folder_hint">Grant access to the shared RetroArch folder for its saves and states.</string>
+    <string name="save_sync_broad_storage">All Files Access (optional)</string>
+    <string name="app_name">RomMMobileS</string>
 
     <!-- sections -->
     <string name="section_platforms">Platforms</string>
@@ -195,6 +198,9 @@
     <string name="theme_light">Light</string>
     <string name="theme_system">Follow system</string>
     <string name="settings_advanced">Advanced</string>
+    <string name="settings_save_sync">Saves and States Sync</string>
+    <string name="settings_save_sync_hint">Background sync, emulator folders and restore</string>
+    <string name="save_sync_emulator_details">Detected launches</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_diagnostics_hint">State, recent downloads, exportable log</string>
     <string name="settings_rerun_onboarding">Run the setup wizard again</string>
@@ -225,6 +231,60 @@
     <string name="local_delete_body">“%s” will be removed from the device. Only files downloaded by this app can be deleted here.</string>
 
     <!-- diagnostics -->
+    <string name="save_sync_missing_scopes">RomM denied save sync access. Sign in again or check the scopes on your client token.</string>
+    <string name="save_sync_title">RomM save sync</string>
+    <string name="save_sync_enable">Background save sync</string>
+    <string name="save_sync_description">Watch verified RetroArch folders and upload saves and states for matching ROMs.</string>
+    <string name="save_sync_watching">Checking save folders…</string>
+    <string name="save_sync_paused">Service stopped. Tap to resume.</string>
+    <string name="save_sync_no_folders">No verified save folders. Check the emulator folders on this screen.</string>
+    <string name="emulator_access_title">Emulator save folders</string>
+    <string name="emulator_access_choose_body">Check the detected folders. Choose a different folder if your core saves somewhere else.</string>
+    <string name="emulator_access_default_saves">Detected saves: %1$s</string>
+    <string name="emulator_access_default_states">Detected states: %1$s</string>
+    <string name="emulator_access_choose_saves">Choose saves</string>
+    <string name="emulator_access_choose_states">Choose states</string>
+    <string name="emulator_access_choose_error">Choose a writable folder in shared storage.</string>
+    <string name="emulator_access_later">Later</string>
+    <string name="emulator_access_esde_folder">Choose the ES-DE data folder to detect your emulator choices.</string>
+    <string name="emulator_access_folder_error">Could not keep access to that folder. Choose the ES-DE data folder again.</string>
+    <string name="emulator_access_no_folders">No shared RetroArch save folders found. Check the save directories in RetroArch.</string>
+    <string name="save_sync_usage_title">Usage Access for automatic restore</string>
+    <string name="save_sync_usage_needed">Allow Usage Access and enable RetroArch Auto Save State. The companion needs both to detect when RetroArch quits.</string>
+    <string name="save_sync_usage_granted">Usage Access granted. Keep Auto Save State enabled in RetroArch.</string>
+    <string name="save_sync_usage_open">Open Usage Access</string>
+    <string name="save_sync_now">Sync now</string>
+    <string name="save_sync_apply">Apply downloaded saves and states</string>
+    <string name="save_sync_apply_hint">Close RetroArch before applying incoming files.</string>
+    <string name="save_sync_apply_warning">Close RetroArch completely. Confirm both devices use compatible versions of each core before applying states. RomMMobileS keeps a backup of any local file it replaces.</string>
+    <string name="save_sync_apply_confirm">RetroArch is closed</string>
+    <string name="save_sync_battery">Battery optimization</string>
+    <string name="save_sync_battery_exempt">Android reports that RomMMobileS is exempt from battery optimization.</string>
+    <string name="save_sync_battery_hint">Open App info. Select Battery, then Unrestricted if available.</string>
+    <string name="save_sync_start_failed">Android could not start save sync. Open RomMMobileS and try again.</string>
+    <string name="save_sync_notification">%1$d folders · %2$d incoming · %3$d conflicts</string>
+    <string name="save_sync_battery_files">Sync battery saves</string>
+    <string name="save_sync_battery_files_hint">Sync in-game progress between devices.</string>
+    <string name="save_sync_state_files">Sync save states</string>
+    <string name="save_sync_state_files_hint">Sync emulator snapshots. A different core build can reject a state.</string>
+    <string name="save_sync_types_off">Select at least one save type to sync.</string>
+    <string name="save_sync_waiting_for_exit">Incoming files are waiting for a verified RetroArch exit.</string>
+    <string name="save_sync_recovery_export">Export save recovery copies</string>
+    <string name="save_sync_recovery_hint">Keep a copy of the saves preserved before restore or during conflicts.</string>
+    <string name="save_sync_recovery_empty">No recovery files were available.</string>
+    <string name="save_sync_recovery_saved">Save recovery archive exported.</string>
+    <string name="save_sync_recovery_failed">Could not export save recovery files.</string>
+    <string name="save_sync_summary">%1$d folders · %2$d linked ROMs · %3$d uploaded · %4$d incoming · %5$d applied · %6$d conflicts · %7$d failed</string>
+    <string name="diag_esde">ES-DE emulator and save detection</string>
+    <string name="diag_esde_folder">ES-DE data folder</string>
+    <string name="diag_esde_loading">Checking configuration…</string>
+    <string name="diag_esde_error">Could not read configuration. Choose the ES-DE data folder.</string>
+    <string name="diag_esde_choose">Choose the folder containing settings and gamelists.</string>
+    <string name="diag_esde_config_read">Read RetroArch configuration.</string>
+    <string name="diag_esde_config_unreadable">RetroArch configuration is inaccessible. Check the detected folders or choose different ones.</string>
+    <string name="diag_esde_saves">Saves: %1$s</string>
+    <string name="diag_esde_states">States: %1$s</string>
+    <string name="diag_esde_unverified">Unverified</string>
     <string name="diag_state">State</string>
     <string name="diag_downloads">Last downloads</string>
     <string name="diag_log">Log</string>
@@ -304,7 +364,7 @@
     <string name="launcher_custom_desc">RetroArch only or another frontend: RomM platform names are used as folder names.</string>
     <string name="ob_storage_body">Choose the folder your frontend scans (for ES-DE usually ROMs on internal memory or SD). Downloads go straight into the right sub-folder.</string>
     <string name="ob_storage_allfiles_ok">All files access granted: files are visible to every emulator immediately.</string>
-    <string name="ob_storage_allfiles_missing">Without All files access the app falls back to the system folder picker, which is slower and missing on some TV boxes.</string>
+    <string name="ob_storage_allfiles_missing">The app uses only the folders you select. All Files Access is optional and can detect save changes faster.</string>
     <string name="ob_storage_checking">Checking write access…</string>
     <string name="ob_storage_writable">Writable</string>
     <string name="ob_storage_not_writable">Not writable: pick another folder or grant access</string>
@@ -315,7 +375,7 @@
 
     <!-- root chooser -->
     <string name="root_title">ROM folder</string>
-    <string name="root_allfiles_body">To write directly into the frontend folders the app needs “All files access”. It is the same permission ES-DE uses.</string>
+    <string name="root_allfiles_body">Use the folder picker for access to specific folders. Optional All Files Access enables direct file watching and supports devices without a picker.</string>
     <string name="root_allfiles_grant">Grant All files access</string>
     <string name="root_allfiles_unavailable">This device does not expose the All files access screen.</string>
     <string name="root_pick_saf">Choose folder</string>

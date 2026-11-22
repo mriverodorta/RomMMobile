@@ -15,6 +15,8 @@ import com.rommmobile.app.data.db.DownloadState
 import com.rommmobile.app.data.mapping.MappingRepository
 import com.rommmobile.app.data.prefs.SettingsStore
 import com.rommmobile.app.data.repo.LocalLibraryRepository
+import com.rommmobile.app.feature.saves.SaveSyncControl
+import com.rommmobile.app.data.db.DownloadKind
 import com.rommmobile.app.di.ApplicationScope
 import com.rommmobile.app.di.DownloadClient
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,6 +51,7 @@ class DownloadEngine @Inject constructor(
     private val settings: SettingsStore,
     private val mapping: MappingRepository,
     private val localLibrary: LocalLibraryRepository,
+    private val saveSync: SaveSyncControl,
     @DownloadClient private val client: OkHttpClient,
     private val serverStore: com.rommmobile.app.core.network.ServerStore,
     private val log: FileLogger,
@@ -173,7 +176,11 @@ class DownloadEngine @Inject constructor(
 
     private suspend fun handleOutcome(entity: DownloadEntity, outcome: TaskOutcome) {
         when (outcome) {
-            TaskOutcome.Completed -> { completedInRun = true; _progress.update { it - entity.id } }
+            TaskOutcome.Completed -> {
+                completedInRun = true
+                _progress.update { it - entity.id }
+                if (entity.kind == DownloadKind.ROM) saveSync.romDownloaded()
+            }
             TaskOutcome.Paused -> { dao.setState(entity.id, DownloadState.PAUSED); _progress.update { it - entity.id } }
             TaskOutcome.Cancelled -> { dao.setState(entity.id, DownloadState.CANCELLED); _progress.update { it - entity.id } }
             TaskOutcome.Deferred -> {

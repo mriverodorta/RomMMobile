@@ -81,6 +81,11 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     private object K {
         val onboardingDone = booleanPreferencesKey("onboarding_done")
         val launcher = stringPreferencesKey("launcher")
+        val emulatorFolderPromptDismissed = booleanPreferencesKey("emulator_folder_prompt_dismissed")
+        val syncBatterySaves = booleanPreferencesKey("sync_battery_saves")
+        val syncSaveStates = booleanPreferencesKey("sync_save_states")
+        val saveSyncEnabled = booleanPreferencesKey("save_sync_enabled")
+        val esdeDataTree = stringPreferencesKey("esde_data_tree")
         val storageRoot = stringPreferencesKey("storage_root")
         val viewMode = stringPreferencesKey("view_mode")
         val sortField = stringPreferencesKey("sort_field")
@@ -136,6 +141,24 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     val storageRoot: Flow<StorageRoot?> = settings.map { it.storageRoot }.distinctUntilChanged()
     val launcher: Flow<Launcher> = settings.map { it.launcher }.distinctUntilChanged()
     val buttonMap: Flow<ButtonMap> = settings.map { it.buttonMap }.distinctUntilChanged()
+
+    val emulatorFolderPromptDismissed: Flow<Boolean> =
+        ds.data.map { it[K.emulatorFolderPromptDismissed] ?: false }.distinctUntilChanged()
+
+    suspend fun dismissEmulatorFolderPrompt() = ds.edit { it[K.emulatorFolderPromptDismissed] = true }
+
+    val syncBatterySaves = ds.data.map { it[K.syncBatterySaves] ?: true }.distinctUntilChanged()
+    val syncSaveStates = ds.data.map { it[K.syncSaveStates] ?: false }.distinctUntilChanged()
+
+    suspend fun setSaveTypeEnabled(state: Boolean, enabled: Boolean) = ds.edit {
+        it[if (state) K.syncSaveStates else K.syncBatterySaves] = enabled
+    }
+
+    val saveSyncEnabled: Flow<Boolean> = ds.data.map { it[K.saveSyncEnabled] ?: false }.distinctUntilChanged()
+    suspend fun setSaveSyncEnabled(enabled: Boolean) = ds.edit { it[K.saveSyncEnabled] = enabled }
+
+    suspend fun esdeDataTree(): String? = ds.data.first()[K.esdeDataTree]
+    suspend fun setEsdeDataTree(uri: String) = ds.edit { it[K.esdeDataTree] = uri }
 
     suspend fun snapshot(): Settings = settings.first()
 

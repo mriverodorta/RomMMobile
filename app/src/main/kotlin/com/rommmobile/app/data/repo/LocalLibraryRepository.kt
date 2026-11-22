@@ -106,13 +106,16 @@ class LocalLibraryRepository @Inject constructor(
                     log.w("LocalLib", "scan failed for $platformSlug in $relDir", e); continue
                 }
                 for (f in entries) {
-                    if (isSidecar(f.name) || !seen.add(f.name)) continue
+                    if (isSidecar(f.name) || f.name in seen) continue
+                    val relPath = if (relDir.isEmpty()) f.name else "$relDir/${f.name}"
+                    if (f.isDirectory && runCatching { gw.list(relPath).none { !isSidecar(it.name) } }.getOrDefault(false)) continue
+                    seen += f.name
                     rows += LocalFileEntity(
                         platformSlug = platformSlug,
                         fileName = f.name,
                         nameKey = Rom.nameKeyOf(f.name),
                         sizeBytes = f.sizeBytes,
-                        relPath = if (relDir.isEmpty()) f.name else "$relDir/${f.name}",
+                        relPath = relPath,
                         isDirectory = f.isDirectory,
                         downloadedByApp = previous[f.name]?.downloadedByApp ?: false,
                         verifiedAt = now,

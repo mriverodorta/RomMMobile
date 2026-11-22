@@ -2,6 +2,7 @@ package com.rommmobile.app.core.network
 
 import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.data.api.RommApi
+import com.rommmobile.app.data.api.RommSaveApi
 import com.rommmobile.app.di.ApiClient
 import com.rommmobile.app.di.DownloadClient
 import com.rommmobile.app.di.ImageClient
@@ -88,4 +89,7 @@ object NetworkModule {
 
     @Provides @Singleton
     fun rommApi(retrofit: Retrofit): RommApi = retrofit.create(RommApi::class.java)
+
+    @Provides @Singleton
+    fun rommSaveApi(retrofit: Retrofit): RommSaveApi = retrofit.create(RommSaveApi::class.java)
 }

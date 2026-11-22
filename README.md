@@ -2,7 +2,7 @@
 
 RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopapera/RomMMobile) for Android handhelds. Browse your [RomM](https://romm.app) library and download games into the folders your frontend uses. With ES-DE and RetroArch, you can also sync in-game battery saves and emulator save states between devices through your RomM server.
 
-**[Download RomMMobileS 1.0.3 Beta 1 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/v1.0.3-beta.1/RomMMobileS-1.0.3-beta.1.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/v1.0.3-beta.1)
+**[Download RomMMobileS 1.0.3 RC 1 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/v1.0.3-rc.1/RomMMobileS-1.0.3-rc.1.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/v1.0.3-rc.1)
 
 🇮🇹 [Original upstream README in Italian](README.it-IT.md)
 
@@ -26,7 +26,7 @@ RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopaper
 
 ## Install
 
-1. Download the beta APK linked above.
+1. Download the release candidate APK linked above.
 2. Open the APK on your device. If Android prompts you, allow your file manager or browser to install unknown apps.
 3. On first launch the setup wizard asks, in order:
    - **Server**: the RomM address (`http://ip:port` at home, or the HTTPS domain). It is probed right away and the server version is shown.
@@ -39,7 +39,7 @@ Everything can be changed later from **Settings**.
 
 ## Set up automatic save and state sync
 
-Repeat these steps on each handheld. Use the same RomM account and the same ROM files from your RomM library on both devices. Sync matches each ROM by filename and SHA-1 within its platform. The beta was tested with RomM 5.4.1, ES-DE, and RetroArch on the Retroid Pocket Classic and Anbernic RG476H.
+Repeat these steps on each handheld. Use the same RomM account and the same ROM files from your RomM library on both devices. Sync matches each ROM by filename and SHA-1 within its platform. Save sync was tested with RomM 5.4.1, ES-DE, and RetroArch on the Retroid Pocket Classic and Anbernic RG476H.
 
 1. Sign in to RomM. If you sign in with a QR or device code, approve the requested sync permissions in RomM.
 2. Select **ES-DE** as your frontend and choose the ROM folder that ES-DE uses.
@@ -92,7 +92,7 @@ The reading order is the number order, like the three trials to become a pirate.
 
 ## Building from source
 
-Check out the [beta source tag](https://github.com/mriverodorta/RomMMobileS/tree/v1.0.3-beta.1) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
+Check out the [release candidate source tag](https://github.com/mriverodorta/RomMMobileS/tree/v1.0.3-rc.1) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
 
 ```bash
 ./gradlew :app:assembleRelease
@@ -104,7 +104,7 @@ Stack: Kotlin 2.3, Jetpack Compose, Hilt, Room, Paging 3, DataStore, Coil 3, OkH
 
 ## Status
 
-Version **1.0.3 Beta 1** adds automatic save and state sync for ES-DE with RetroArch.
+Version **1.0.3 RC 1** improves battery-save recovery for ES-DE with RetroArch. The app uses RomM’s original version order when an older copy gets a newer timestamp.
 
 Bug reports and ideas: open an issue on this repository. If you see a three-headed monkey behind you, attach a screenshot.
 

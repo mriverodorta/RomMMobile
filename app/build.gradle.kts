@@ -16,8 +16,8 @@ android {
         applicationId = "com.maikeldorta.rommmobiles"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.3-beta.1"
+        versionCode = 8
+        versionName = "1.0.3-rc.1"
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
         resourceConfigurations += listOf("en", "it")

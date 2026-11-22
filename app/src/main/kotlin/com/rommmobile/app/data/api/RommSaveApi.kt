@@ -42,7 +42,7 @@ interface RommSaveApi {
     suspend fun download(
         @Path("id") saveId: Int,
         @Query("device_id") deviceId: String,
-        @Query("session_id") sessionId: Int,
+        @Query("session_id") sessionId: Int?,
         @Query("optimistic") optimistic: Boolean = false,
     ): ResponseBody
 
@@ -117,6 +117,8 @@ data class SaveSyncCompletion(
 
 @Serializable
 data class SaveSyncDetails(
+    val id: Int,
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("content_hash") val hash: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     val slot: String? = null,

@@ -2,7 +2,7 @@
 
 RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopapera/RomMMobile) for Android handhelds. Browse your [RomM](https://romm.app) library and download games into the folders your frontend uses. With ES-DE and RetroArch, you can also sync in-game battery saves and emulator save states between devices through your RomM server.
 
-**[Download RomMMobileS 1.0.3 Beta 1 APK](https://github.com/mriverodorta/RomMMobile/releases/download/v1.0.3-beta.1/RomMMobileS-1.0.3-beta.1.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobile/releases/tag/v1.0.3-beta.1)
+**[Download RomMMobileS 1.0.3 Beta 1 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/v1.0.3-beta.1/RomMMobileS-1.0.3-beta.1.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/v1.0.3-beta.1)
 
 🇮🇹 [Original upstream README in Italian](README.it-IT.md)
 
@@ -92,7 +92,7 @@ The reading order is the number order, like the three trials to become a pirate.
 
 ## Building from source
 
-Check out the [beta source tag](https://github.com/mriverodorta/RomMMobile/tree/v1.0.3-beta.1) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
+Check out the [beta source tag](https://github.com/mriverodorta/RomMMobileS/tree/v1.0.3-beta.1) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
 
 ```bash
 ./gradlew :app:assembleRelease

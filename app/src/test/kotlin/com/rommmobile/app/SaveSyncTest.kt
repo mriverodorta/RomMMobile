@@ -5,6 +5,8 @@ import com.rommmobile.app.data.api.SaveSyncDetails
 import com.rommmobile.app.feature.saves.batteryRestoreVersion
 import com.rommmobile.app.feature.saves.bothSaveVersionsChanged
 import com.rommmobile.app.feature.saves.canRestoreBeforeFirstLaunch
+import com.rommmobile.app.feature.saves.hasExitWrite
+import com.rommmobile.app.feature.saves.negotiatedBatteryDownload
 import org.junit.Test
 
 class SaveSyncTest {
@@ -41,5 +43,24 @@ class SaveSyncTest {
         assertThat(bothSaveVersionsChanged("base", "base", "remote")).isFalse()
         assertThat(bothSaveVersionsChanged("base", "local", "base")).isFalse()
         assertThat(bothSaveVersionsChanged("base", "same", "same")).isFalse()
+    }
+
+    @Test
+    fun `battery reconciliation respects delete and conflict decisions`() {
+        val old = SaveSyncDetails(1, "2026-01-01T12:00:00Z", "old")
+        val latest = SaveSyncDetails(2, "2026-01-01T12:01:00Z", "latest")
+        val history = listOf(old, latest)
+        assertThat(negotiatedBatteryDownload("conflict", history, "old", "old")).isNull()
+        assertThat(negotiatedBatteryDownload("delete", history, "old", "old")).isNull()
+        assertThat(negotiatedBatteryDownload("download", history, "old", "old")).isEqualTo(latest)
+        assertThat(negotiatedBatteryDownload("no_op", history, "old", "old")).isEqualTo(latest)
+    }
+
+    @Test
+    fun `an unload write confirms exit but a backgrounded or resumed activity does not`() {
+        assertThat(hasExitWrite(30_000, 10_000, 25_000) { listOf(24_000L) }).isTrue()
+        assertThat(hasExitWrite(30_000, 10_000, 25_000) { emptyList() }).isFalse()
+        assertThat(hasExitWrite(30_000, 28_000, 25_000) { listOf(24_000L) }).isFalse()
+        assertThat(hasExitWrite(30_000, 10_000, 25_000) { listOf(9_000L) }).isFalse()
     }
 }

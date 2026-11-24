@@ -13,6 +13,7 @@ import com.rommmobile.app.core.network.AuthStore
 import com.rommmobile.app.core.network.ServerStore
 import com.rommmobile.app.core.storage.FileInfo
 import com.rommmobile.app.core.storage.normalizeFolderName
+import com.rommmobile.app.core.storage.normalizeFolderName
 import com.rommmobile.app.core.util.FileLogger
 import com.rommmobile.app.data.api.RomDto
 import com.rommmobile.app.data.api.RommApi
@@ -28,6 +29,7 @@ import com.rommmobile.app.data.mapping.PlatformMapLoader
 import com.rommmobile.app.data.prefs.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -75,6 +77,17 @@ internal fun bothSaveVersionsChanged(common: String?, local: String?, remote: St
     common != null && local != null && remote != null && local != remote &&
         local != common && remote != common
 
+internal fun negotiatedBatteryDownload(
+    action: String,
+    history: List<SaveSyncDetails>,
+    common: String?,
+    local: String?,
+): SaveSyncDetails? = when (action) {
+    "download" -> history.latestBatteryVersion()
+    "upload", "no_op" -> batteryRestoreVersion(history, common, local)
+    else -> null
+}
+
 data class SaveSyncResult(
     val watchedFolders: Int,
     val games: Int,
@@ -110,6 +123,9 @@ class SaveSyncEngine @Inject constructor(
     }
 
     private data class LocalVersion(val file: SyncFile, val hash: String)
+    private data class LocalRom(val file: SyncFile, val entry: FileInfo, val launch: EsdeLaunch) {
+        val stem: String get() = entry.name.substringBeforeLast('.')
+    }
     private data class Catalog(val account: String, val systems: Set<String>, val expires: Long, val roms: Map<String, List<RomDto>>)
     private data class RomHash(val length: Long, val modified: Long, val hash: String)
 
@@ -120,6 +136,8 @@ class SaveSyncEngine @Inject constructor(
     private val romHashes = mutableMapOf<String, RomHash>()
 
     private val scanLock = Mutex()
+    private var auditedAccount: String? = null
+    private val auditedBattery = mutableMapOf<Pair<Int, String>, SaveSyncOperation>()
 
     internal suspend fun run(apply: Boolean, watch: (Set<SyncWatchFolder>) -> Unit): SaveSyncResult =
         scanLock.withLock { scan(apply, watch) }
@@ -137,8 +155,10 @@ class SaveSyncEngine @Inject constructor(
 
         val folders = launches.flatMap { listOfNotNull(it.saves, it.states) }.distinct()
             .mapNotNull { path -> resolveSyncFolder(context, path, writable = true)?.let { path to it } }.toMap()
-        watch(if (batteryEnabled || statesEnabled) folders.values.mapNotNull { it.watchFolder() }.toSet() else emptySet())
-        if ((!batteryEnabled && !statesEnabled) || folders.isEmpty()) return SaveSyncResult(0, 0)
+        if ((!batteryEnabled && !statesEnabled) || folders.isEmpty()) {
+            watch(emptySet())
+            return SaveSyncResult(0, 0)
+        }
 
         val sessionAuth = auth.state.value
         check(sessionAuth.isLoggedIn) { "Sign in to RomM to sync saves." }
@@ -146,6 +166,10 @@ class SaveSyncEngine @Inject constructor(
         val remoteUrl = server.config.value.remoteUrl
         val user = api.me().jsonObject.getValue("id").jsonPrimitive.content
         val account = digest("$serverUrl\n$remoteUrl\n$user".encodeToByteArray(), "SHA-256")
+        if (auditedAccount != account) {
+            auditedBattery.clear()
+            auditedAccount = account
+        }
         val device = sessionAuth.deviceId ?: device(account)
         fun sameAccount() {
             val current = server.config.value
@@ -156,11 +180,26 @@ class SaveSyncEngine @Inject constructor(
 
         val stateFolders = launches.groupBy { it.packageName }
             .mapValues { (_, rows) -> rows.mapNotNull { folders[it.states] }.distinct() }
+        val runtimeLogs = launches.filter { it.runtimeLogRoot != null && it.core != null }
+            .groupBy { it.packageName }
+            .mapValues { (_, rows) ->
+                rows.groupBy { it.runtimeLogRoot }.flatMap { (path, profiles) ->
+                    val root = resolveSyncFolder(context, checkNotNull(path), writable = false) ?: return@flatMap emptyList()
+                    val coreNames = profiles.flatMap { listOfNotNull(it.core, it.label, it.saves?.substringAfterLast('/')) }
+                        .map(::normalizeFolderName).toSet()
+                    root.list().filter { it.isDirectory && normalizeFolderName(it.name) in coreNames }
+                        .map { root.child(it.name) }
+                }
+            }
+        watch((folders.values + runtimeLogs.values.flatten()).mapNotNull { it.watchFolder() }.toSet())
         fun emulatorExited(launch: EsdeLaunch): Boolean {
             val pkg = launch.packageName ?: return false
             return retroArchExit.canRestore(pkg, {
-                stateFolders[pkg].orEmpty().flatMap { folder -> folder.list() }
-                    .filter { !it.isDirectory && it.name.endsWith(".state.auto") }.map { it.lastModified }
+                val states = stateFolders[pkg].orEmpty().flatMap { it.list() }
+                    .filter { !it.isDirectory && it.name.endsWith(".state.auto") }
+                val logs = runtimeLogs[pkg].orEmpty().flatMap { it.list() }
+                    .filter { !it.isDirectory && it.name.endsWith(".lrtl") }
+                (states + logs).map { it.lastModified }
             })
         }
 
@@ -171,27 +210,23 @@ class SaveSyncEngine @Inject constructor(
             if (users.isNotEmpty() && users.all(::emulatorExited)) folder.recover()
             folder.list().filterNot { it.isDirectory }.map { folder.file(it.name) }
         }
-        // An ambiguous local output name must not associate one save with multiple games.
-        val uniqueGames = games.filter { candidate ->
-            games.none { other ->
-                other !== candidate && candidate.stem == other.stem &&
-                    (candidate.launch.saves != null && candidate.launch.saves == other.launch.saves ||
-                     candidate.launch.states != null && candidate.launch.states == other.launch.states)
-            }
-        }
-        val uniqueIds = uniqueGames.groupBy { it.rom.id }.values.mapNotNull { it.singleOrNull() }
+        val uniqueIds = games.groupBy { it.rom.id }.values.mapNotNull { it.singleOrNull() }
         val stagedFiles = mutableSetOf<File>()
         val stageDir = File(context.cacheDir, "save-sync/$account")
         for (batch in uniqueIds.chunked(100)) {
             sameAccount()
             val gameById = batch.associateBy { it.rom.id }
             val local = mutableMapOf<Pair<Int, String>, LocalVersion>()
-            val batteryRestores = mutableMapOf<Pair<Int, String>, SaveSyncOperation>()
             val histories = mutableMapOf<Int, List<SaveSyncDetails>>()
-            suspend fun slotHistory(game: Game, slot: String) =
-                histories.getOrPut(game.rom.id) { saves.history(game.rom.id) }.filter {
-                    it.slot == slot && it.emulator == game.emulator && it.hash != null
+            suspend fun slotHistory(game: Game, slot: String, fresh: Boolean = false): List<SaveSyncDetails> {
+                if (fresh) histories.remove(game.rom.id)
+                val versions = histories.getOrPut(game.rom.id) {
+                    sameAccount()
+                    withTimeoutOrNull(8_000) { saves.history(game.rom.id) }
+                        ?: throw java.io.IOException("Timed out checking save history.")
                 }
+                return versions.filter { it.slot == slot && it.emulator == game.emulator && it.hash != null }
+            }
             val manifest = batch.flatMap { game ->
                 val dirs = setOfNotNull(game.launch.saves, game.launch.states)
                 dirs.flatMap { filesByDirectory[it].orEmpty() }.mapNotNull { file ->
@@ -203,16 +238,6 @@ class SaveSyncEngine @Inject constructor(
                     val slot = saveSlot(game.core, suffix)
                     val slotKey = game.rom.id to slot
                     local[slotKey] = LocalVersion(file, snapshot.hash)
-                    val common = syncedVersions.getString("$account:$device:${game.rom.id}:$slot", null)
-                    if (!suffix.startsWith(".state")) {
-                        val remote = batteryRestoreVersion(slotHistory(game, slot), common, snapshot.hash)
-                        if (remote != null) {
-                            batteryRestores[slotKey] = SaveSyncOperation(
-                                "download", game.rom.id, remote.id, slot, game.emulator, remote.hash,
-                            )
-                            return@mapNotNull null
-                        }
-                    }
                     val version = localVersionTime(account, game.rom.id, slot, snapshot)
                     SaveSyncFile(game.rom.id, file.name, slot, game.emulator, snapshot.hash,
                         Instant.ofEpochMilli(version).toString(), snapshot.bytes.size.toLong())
@@ -222,8 +247,8 @@ class SaveSyncEngine @Inject constructor(
                 batch.map { it.emulator }.distinct(), restoreUnlisted = true))
             var completed = 0
             var failed = 0
-            val operations = session.operations.filterNot { it.romId to it.slot in batteryRestores }
-            for (operation in operations + batteryRestores.values) {
+            // Handle active transfers before checking unchanged battery saves for replayed revisions.
+            for (operation in session.operations.sortedBy { it.action == "no_op" }) {
                 sameAccount()
                 val game = gameById[operation.romId] ?: continue
                 val slot = operation.slot ?: continue
@@ -232,30 +257,48 @@ class SaveSyncEngine @Inject constructor(
                 val suffix = "." + slot.removePrefix(prefix)
                 if (!isSaveSuffix(suffix) || !enabled(suffix)) continue
                 val battery = !suffix.startsWith(".state")
-                val previous = local[game.rom.id to slot]
-                suspend fun currentServerVersion() = slotHistory(game, slot).let { versions ->
-                    if (battery) versions.latestBatteryVersion() ?: versions.maxByOrNull { it.updatedAt.orEmpty() }
-                    else versions.maxByOrNull { it.updatedAt.orEmpty() }
+                val slotKey = game.rom.id to slot
+                val previous = local[slotKey]
+                suspend fun currentServerVersion(fresh: Boolean = false) = slotHistory(game, slot, fresh).let { versions ->
+                    if (battery) versions.latestBatteryVersion() else versions.maxByOrNull { it.updatedAt.orEmpty() }
                 }
                 val key = "$account:$device:${game.rom.id}:$slot"
                 val common = syncedVersions.getString(key, null)
                 fun remember(hash: String) { syncedVersions.edit().putString(key, hash).apply() }
+                var action = operation.action
                 try {
-                    when (operation.action) {
+                    val audit = battery && action == "no_op" && operation.hash != null &&
+                        auditedBattery[slotKey] != operation
+                    val history = if (battery && (action == "download" || audit ||
+                            (action == "upload" && operation.saveId != null))) slotHistory(game, slot) else emptyList()
+                    val recovery = if (history.isEmpty()) null else batteryRestoreVersion(history, common, previous?.hash)
+                    val batteryVersion = negotiatedBatteryDownload(action, history, common, previous?.hash)
+                    val download = when {
+                        action == "download" && battery -> {
+                            val latest = checkNotNull(batteryVersion) { "RomM no longer lists this battery save." }
+                            operation.copy(saveId = latest.id, hash = latest.hash)
+                        }
+                        action == "download" -> operation
+                        batteryVersion != null -> operation.copy(action = "download", saveId = batteryVersion.id, hash = batteryVersion.hash)
+                        else -> null
+                    }
+                    if (download != null) action = "download"
+                    when (action) {
                         "upload" -> {
                             val current = previous?.let { snapshot(it.file) }
                             if (current == null || current.hash != previous.hash) {
                                 failed++
                                 continue
                             }
-                            if (common != null && current.hash != common) {
+                            if (operation.saveId != null && current.hash != operation.hash) {
                                 val remote = currentServerVersion()
-                                if (bothSaveVersionsChanged(common, current.hash, remote?.hash)) {
+                                if (common == null || bothSaveVersionsChanged(common, current.hash, remote?.hash)) {
                                     saveRecoveryCopy(account, game.rom.id, current, "local")
                                     result = result.copy(conflicts = result.conflicts + 1)
                                     continue
                                 }
                             }
+                            sameAccount()
                             val part = MultipartBody.Part.createFormData("saveFile", current.name,
                                 current.bytes.toRequestBody("application/octet-stream".toMediaType()))
                             saves.upload(game.rom.id, device, session.sessionId, slot, game.emulator, previous.hash, part)
@@ -265,23 +308,18 @@ class SaveSyncEngine @Inject constructor(
                         }
                         "download" -> {
                             val target = folders[game.destination(suffix)]?.file(game.stem + suffix) ?: continue
-                            val batteryRestore = game.rom.id to slot in batteryRestores
-                            // The server may offer a replayed version when the local file is missing.
-                            val latest = if (battery && !batteryRestore) currentServerVersion() else null
-                            val download = if (latest != null && latest.id != operation.saveId) {
-                                operation.copy(saveId = latest.id, hash = latest.hash)
-                            } else operation
-                            if (battery && previous != null && previous.hash == download.hash) {
+                            val selected = checkNotNull(download)
+                            if (previous != null && previous.hash == selected.hash) {
                                 remember(previous.hash)
                                 completed++
                                 continue
                             }
-                            val sessionId = session.sessionId.takeUnless { batteryRestore || download != operation }
-                            val downloaded = stage(download, device, sessionId, stageDir)
+                            val sessionId = session.sessionId.takeIf { selected == operation }
+                            val downloaded = stage(selected, device, sessionId, stageDir)
                             stagedFiles += downloaded
-                            val unknownLocal = !batteryRestore && common == null && previous != null &&
-                                previous.hash != download.hash && slotHistory(game, slot).none { it.hash == previous.hash }
-                            if (unknownLocal || (!batteryRestore && bothSaveVersionsChanged(common, previous?.hash, download.hash))) {
+                            val unknownLocal = recovery == null && common == null && previous != null &&
+                                slotHistory(game, slot).none { it.hash == previous.hash }
+                            if (unknownLocal || (recovery == null && bothSaveVersionsChanged(common, previous?.hash, selected.hash))) {
                                 snapshot(target)?.let { saveRecoveryCopy(account, game.rom.id, it, "local") }
                                 snapshot(downloaded)?.let { saveRecoveryCopy(account, game.rom.id, it, "server", target.name) }
                                 result = result.copy(conflicts = result.conflicts + 1)
@@ -290,18 +328,25 @@ class SaveSyncEngine @Inject constructor(
                             val manualApply = apply && ProcessLifecycleOwner.get().lifecycle.currentState
                                 .isAtLeast(Lifecycle.State.RESUMED)
                             val autoApply = !manualApply && emulatorExited(game.launch)
+                            if ((manualApply || autoApply) && battery) {
+                                val latest = currentServerVersion(fresh = true)
+                                if (latest?.id != selected.saveId || latest?.hash != selected.hash) {
+                                    failed++
+                                    continue
+                                }
+                            }
                             if (manualApply || autoApply) sameAccount()
                             val applied = (manualApply || autoApply) &&
-                                applySave(target, previous, downloaded, download, device, account) {
+                                applySave(target, previous, downloaded, selected, device, account) {
                                     manualApply || emulatorExited(game.launch)
                                 }
                             if (applied) {
-                                download.hash?.let { hash ->
+                                selected.hash?.let { hash ->
                                     remember(hash)
                                     if (battery) rememberServerVersion(account, game, slot, hash)
                                 }
                                 result = result.copy(applied = result.applied + 1)
-                                if (!batteryRestore) completed++
+                                completed++
                             } else {
                                 result = result.copy(staged = result.staged + 1, waitingForExit = result.waitingForExit + 1)
                             }
@@ -311,17 +356,15 @@ class SaveSyncEngine @Inject constructor(
                             result = result.copy(conflicts = result.conflicts + 1)
                         }
                         "no_op" -> {
-                            if (previous != null && previous.hash != common) {
-                                val remote = currentServerVersion()
-                                if (remote?.hash == previous.hash) {
-                                    remember(previous.hash)
-                                } else if (bothSaveVersionsChanged(common, previous.hash, remote?.hash)) {
-                                    snapshot(previous.file)?.takeIf { it.hash == previous.hash }?.let {
-                                        saveRecoveryCopy(account, game.rom.id, it, "local")
-                                    }
-                                    result = result.copy(conflicts = result.conflicts + 1)
-                                    continue
+                            if (audit) auditedBattery[slotKey] = operation
+                            if (previous != null && operation.hash == previous.hash) {
+                                remember(previous.hash)
+                            } else if (previous != null && bothSaveVersionsChanged(common, previous.hash, operation.hash)) {
+                                snapshot(previous.file)?.takeIf { it.hash == previous.hash }?.let {
+                                    saveRecoveryCopy(account, game.rom.id, it, "local")
                                 }
+                                result = result.copy(conflicts = result.conflicts + 1)
+                                continue
                             }
                             completed++
                         }
@@ -330,7 +373,7 @@ class SaveSyncEngine @Inject constructor(
                     throw e
                 } catch (e: Exception) {
                     log.w("SaveSync", "Could not complete ${operation.action} for ROM ${operation.romId}", e)
-                    if (operation.action == "upload" && e is ApiException && e.httpCode == 409 && previous != null) {
+                    if (action == "upload" && e is ApiException && e.httpCode == 409 && previous != null) {
                         if (!rememberServerVersion(account, game, slot, previous.hash)) {
                             snapshot(previous.file)?.let { saveRecoveryCopy(account, game.rom.id, it, "local") }
                             result = result.copy(conflicts = result.conflicts + 1)
@@ -429,25 +472,44 @@ class SaveSyncEngine @Inject constructor(
     }
 
     private fun matchGames(launches: List<EsdeLaunch>, catalog: Map<String, List<RomDto>>): List<Game> {
-        val games = mutableListOf<Game>()
+        val local = mutableListOf<LocalRom>()
         for ((system, rows) in launches.groupBy { it.system }) {
             val default = rows.firstOrNull { it.game == null } ?: continue
             val root = default.romDirectory?.let { resolveSyncFolder(context, it, writable = false) } ?: continue
-            val candidates = catalog[system].orEmpty().groupBy { it.fsName }
             val overrides = rows.filter { it.game != null }.associateBy { it.game?.removePrefix("./") }
-            for (entry in root.list()) {
-                if (entry.isDirectory) continue
-                val file = root.file(entry.name)
-                val options = candidates[file.name].orEmpty()
-                if (options.isEmpty()) continue
-                val launch = overrides[file.name] ?: default
-                if (launch.core == null || (launch.saves == null && launch.states == null)) continue
-                val sha1 = romHash(file, entry) ?: continue
-                val rom = options.singleOrNull { it.sha1Hash.equals(sha1, ignoreCase = true) } ?: continue
-                games += Game(rom, file.name.substringBeforeLast('.'), launch)
+            val pending = ArrayDeque<Pair<SyncFolder, String>>()
+            pending.add(root to "")
+            while (pending.isNotEmpty()) {
+                val (folder, prefix) = pending.removeLast()
+                for (entry in folder.list()) {
+                    val relative = prefix + entry.name
+                    if (default.romExtensions.any { entry.name.endsWith(it, ignoreCase = true) }) {
+                        val launch = overrides[relative] ?: default
+                        if (launch.core != null && (launch.saves != null || launch.states != null)) {
+                            local += LocalRom(folder.file(entry.name), entry, launch)
+                        }
+                    } else if (entry.isDirectory) {
+                        pending.add(folder.child(entry.name) to "$relative/")
+                    }
+                }
             }
         }
-        return games
+        // Every launchable ROM claims its output filenames, including ROMs unknown to RomM.
+        val saveTargets = local.mapNotNull { it.launch.saves?.let { folder -> folder to it.stem.lowercase() } }
+            .groupingBy { it }.eachCount()
+        val stateTargets = local.mapNotNull { it.launch.states?.let { folder -> folder to it.stem.lowercase() } }
+            .groupingBy { it }.eachCount()
+        val byName = catalog.mapValues { (_, roms) -> roms.groupBy { it.fsName } }
+        return local.mapNotNull { (file, entry, launch) ->
+            val stem = entry.name.substringBeforeLast('.')
+            val name = stem.lowercase()
+            if (entry.isDirectory || (saveTargets[launch.saves to name] ?: 0) > 1 ||
+                (stateTargets[launch.states to name] ?: 0) > 1) return@mapNotNull null
+            val options = byName[launch.system]?.get(entry.name) ?: return@mapNotNull null
+            val sha1 = romHash(file, entry) ?: return@mapNotNull null
+            val rom = options.singleOrNull { it.sha1Hash.equals(sha1, ignoreCase = true) } ?: return@mapNotNull null
+            Game(rom, stem, launch)
+        }
     }
 
     private fun romHash(file: SyncFile, info: FileInfo): String? {

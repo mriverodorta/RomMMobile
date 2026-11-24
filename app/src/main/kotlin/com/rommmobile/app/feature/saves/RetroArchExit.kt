@@ -5,6 +5,8 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Process
 import android.os.SystemClock
@@ -30,12 +32,20 @@ fun openEmulatorUsageSettings(context: Context) {
 internal fun canRestoreBeforeFirstLaunch(now: Long, boot: Long, startup: Long, resumed: Long, stopped: Long) =
     resumed == 0L && stopped == 0L && startup > 0L && startup >= boot - 1_000L && now - startup >= 3_000L
 
+internal fun hasExitWrite(now: Long, resumed: Long, stopped: Long, exitTimes: () -> List<Long>): Boolean {
+    if (resumed == 0L || stopped < resumed || now - stopped < 3_000) return false
+    return exitTimes().any { it in maxOf(resumed, stopped - 5_000)..(stopped + 2_000) }
+}
+
 @Singleton
 class RetroArchExit @Inject constructor(@param:ApplicationContext private val context: Context) {
     private val confirmedStops = mutableMapOf<String, Long>()
 
-    fun canRestore(packageName: String, autoSaveTimes: () -> List<Long>): Boolean {
-        if (!packageName.startsWith("com.retroarch") || !hasEmulatorUsageAccess(context)) return false
+    fun canRestore(packageName: String, exitWriteTimes: () -> List<Long>): Boolean {
+        if (!packageName.startsWith("com.retroarch")) return false
+        // Android marks a force-stopped package independently of its gameplay history.
+        if (isStoppedByAndroid(packageName)) return true
+        if (!hasEmulatorUsageAccess(context)) return false
         val now = System.currentTimeMillis()
         val boot = now - SystemClock.elapsedRealtime()
         val events = try {
@@ -64,11 +74,20 @@ class RetroArchExit @Inject constructor(@param:ApplicationContext private val co
         if (stopped < resumed || now - stopped < 3_000) return false
         if (confirmedStops[packageName] == stopped) return true
 
-        // STOPPED also follows Home. Require the exit autosave from this same activity session.
-        val firstWrite = maxOf(resumed, stopped - 5_000)
-        val lastWrite = stopped + 2_000
-        val autosaved = autoSaveTimes().any { it in firstWrite..lastWrite }
-        if (autosaved) confirmedStops[packageName] = stopped
-        return autosaved
+        // Home can stop the activity without unloading the game. Require a matching write from
+        // content unload: an exit autosave or a per-core runtime log.
+        val exited = hasExitWrite(now, resumed, stopped, exitWriteTimes)
+        if (exited) confirmedStops[packageName] = stopped
+        return exited
+    }
+
+    @Suppress("DEPRECATION") // Keep using the overload available on Android 8.
+    private fun isStoppedByAndroid(packageName: String): Boolean = try {
+        val flags = context.packageManager.getApplicationInfo(packageName, 0).flags
+        (flags and ApplicationInfo.FLAG_STOPPED) != 0
+    } catch (_: PackageManager.NameNotFoundException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 }

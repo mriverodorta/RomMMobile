@@ -19,6 +19,7 @@ internal class SyncFolder(
 ) {
     fun list(): List<FileInfo> = gateway.list(relative)
     fun file(name: String) = SyncFile(this, name)
+    fun child(name: String) = SyncFolder("$path/$name", gateway, listOf(relative, name).filter(String::isNotEmpty).joinToString("/"))
     fun recover() {
         (gateway as? SafFileGateway)?.recoverSaveReplacements(relative)
     }

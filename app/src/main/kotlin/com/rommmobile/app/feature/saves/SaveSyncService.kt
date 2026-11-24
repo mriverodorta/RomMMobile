@@ -196,7 +196,7 @@ class SaveSyncService : Service() {
             }
             // Events request a scan. A periodic scan also finds missed events and server changes.
             withTimeoutOrNull(120_000) { scans.receive() }
-            delay(2_000)
+            delay(4_000)
             while (scans.tryReceive().isSuccess) Unit
         }
         stopSelf()

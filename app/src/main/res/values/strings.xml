@@ -268,7 +268,7 @@
     <string name="save_sync_state_files">Sync save states</string>
     <string name="save_sync_state_files_hint">Sync emulator snapshots. A different core build can reject a state.</string>
     <string name="save_sync_types_off">Select at least one save type to sync.</string>
-    <string name="save_sync_waiting_for_exit">Incoming files are waiting for a verified RetroArch exit.</string>
+    <string name="save_sync_waiting_for_exit">Incoming files are waiting for RetroArch to quit. If they stay pending, force stop RetroArch from Android App info after saving and exiting.</string>
     <string name="save_sync_recovery_export">Export save recovery copies</string>
     <string name="save_sync_recovery_hint">Keep a copy of the saves preserved before restore or during conflicts.</string>
     <string name="save_sync_recovery_empty">No recovery files were available.</string>

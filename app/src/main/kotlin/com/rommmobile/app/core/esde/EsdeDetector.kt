@@ -38,6 +38,8 @@ data class EsdeLaunch(
     val folderSelectionKey: String? = null,
     val savesAutoDetected: Boolean = false,
     val statesAutoDetected: Boolean = false,
+    val romExtensions: Set<String> = emptySet(),
+    val runtimeLogRoot: String? = null,
 )
 
 class EsdeDetector @Inject constructor(
@@ -98,7 +100,9 @@ class EsdeDetector @Inject constructor(
                 location.startsWith('/') -> location
                 else -> null
             }
-            launches += resolve(system, null, choice(systemChoice), rules, profiles, data).copy(romDirectory = romDirectory)
+            val extensions = romExtensions(definition)
+            launches += resolve(system, null, choice(systemChoice), rules, profiles, data)
+                .copy(romDirectory = romDirectory, romExtensions = extensions)
             if (!overridesEnabled) continue
             for (game in games) {
                 val label = game.text("altemulator")
@@ -114,15 +118,19 @@ class EsdeDetector @Inject constructor(
     private fun hasContent(roms: FileGateway?, system: Element): Boolean {
         val location = system.text("path")
         val path = location.removePrefix("%ROMPATH%/")
-        val extensions = system.text("extension").split(Regex("\\s+")).filter { it.startsWith(".") }
-        fun containsRom(files: List<com.rommmobile.app.core.storage.FileInfo>) = files.any { entry ->
-            extensions.any { entry.name.endsWith(it, ignoreCase = true) }
-        }
+        val extensions = romExtensions(system)
         if (location.startsWith("/")) {
-            return File(path).listFiles()?.any { file -> extensions.any { file.name.endsWith(it, true) } } == true
+            return File(path).listFiles()?.any { entry ->
+                entry.isDirectory || extensions.any { entry.name.endsWith(it, ignoreCase = true) }
+            } == true
         }
-        return location.startsWith("%ROMPATH%/") && roms != null && containsRom(roms.list(path))
+        return location.startsWith("%ROMPATH%/") && roms != null && roms.list(path).any { entry ->
+            entry.isDirectory || extensions.any { entry.name.endsWith(it, ignoreCase = true) }
+        }
     }
+
+    private fun romExtensions(system: Element): Set<String> =
+        system.text("extension").split(Regex("\\s+")).filter { it.startsWith(".") }.toSet()
 
     private fun resolve(
         system: String,
@@ -169,10 +177,16 @@ class EsdeDetector @Inject constructor(
             ?: if (chosenSaves == null) folder(cfg, "savefile", "saves", core, label) else null
         val states = chosenStates?.let(::File)?.let(::usableFolder)
             ?: if (chosenStates == null) folder(cfg, "savestate", "states", core, label) else null
+        val runtimeLogRoot = if (cfg?.get("content_runtime_log") == "false") null else {
+            cfg?.get("runtime_log_directory")?.takeIf { it.startsWith('/') }
+                ?: File(cfg?.get("playlist_directory")?.takeIf { it.startsWith('/') }
+                    ?: File(shared, "RetroArch/playlists").path, "logs").path
+        }
         return EsdeLaunch(system, game, label, packageName, core, saves, states,
             saveFoldersVerified = saves != null || states != null, folderSelectionKey = key,
             savesAutoDetected = chosenSaves == null && cfg == null && saves != null,
-            statesAutoDetected = chosenStates == null && cfg == null && states != null)
+            statesAutoDetected = chosenStates == null && cfg == null && states != null,
+            runtimeLogRoot = runtimeLogRoot)
     }
 
     private val selectedFolders = context.getSharedPreferences("selected-emulator-folders", Context.MODE_PRIVATE)

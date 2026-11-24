@@ -42,6 +42,8 @@ sealed interface SessionEvent {
     data object Expired : SessionEvent
 }
 
+internal data class AuthRequest(val session: Long, val state: AuthState)
+
 /** Credentials live encrypted in [SecureStore]; a hot copy is kept for interceptors. */
 @Singleton
 class AuthStore @Inject constructor(private val secure: SecureStore) {
@@ -77,19 +79,21 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
         )
     }
 
-    fun setOAuth(accessToken: String, refreshToken: String?, expiresInSeconds: Long?, username: String?) {
-        val expiresAt = expiresInSeconds?.let { System.currentTimeMillis() + it * 1000 }
-        persist(AuthState(AuthMode.OAUTH, username, accessToken, refreshToken, expiresAt))
-    }
+    private var session = 0L
 
-    fun setClientToken(token: String, username: String?, deviceId: String? = null) {
-        persist(AuthState(AuthMode.CLIENT_TOKEN, username, token, deviceId = deviceId))
-    }
+    @Synchronized
+    internal fun requestCredentials() = AuthRequest(session, _state.value)
 
-    fun setBasic(username: String, password: String) {
-        persist(AuthState(AuthMode.BASIC, username, null, null, null, password))
-    }
+    fun setOAuth(accessToken: String, refreshToken: String?, expiresInSeconds: Long?, username: String?) =
+        startSession(AuthState(AuthMode.OAUTH, username, accessToken, refreshToken, expiry(expiresInSeconds)))
 
+    fun setClientToken(token: String, username: String?, deviceId: String? = null) =
+        startSession(AuthState(AuthMode.CLIENT_TOKEN, username, token, deviceId = deviceId))
+
+    fun setBasic(username: String, password: String) =
+        startSession(AuthState(AuthMode.BASIC, username, password = password))
+
+    @Synchronized
     fun updateUsername(username: String?) {
         if (username == null || username == _state.value.username) return
         persist(_state.value.copy(username = username))
@@ -105,11 +109,32 @@ class AuthStore @Inject constructor(private val secure: SecureStore) {
     fun beginVerification() { verifying = true }
     fun endVerification() { verifying = false }
 
-    /** Session only: settings, folder mapping and download history are untouched. */
-    fun clear(notify: Boolean = false) {
-        persist(AuthState())
-        if (notify && !verifying) _events.tryEmit(SessionEvent.Expired)
+    fun clear() = startSession(AuthState())
+
+    @Synchronized
+    internal fun expire(expected: AuthRequest) {
+        if (!isCurrent(expected)) return
+        clear()
+        if (!verifying) _events.tryEmit(SessionEvent.Expired)
     }
+
+    @Synchronized
+    internal fun refresh(expected: AuthRequest, access: String, refresh: String, expires: Long?): AuthRequest? {
+        if (!isCurrent(expected)) return null
+        persist(_state.value.copy(accessToken = access, refreshToken = refresh, accessExpiresAt = expiry(expires)))
+        return requestCredentials()
+    }
+
+    private fun isCurrent(expected: AuthRequest): Boolean =
+        session == expected.session && _state.value.authorizationHeader() == expected.state.authorizationHeader()
+
+    @Synchronized
+    private fun startSession(state: AuthState) {
+        session++
+        persist(state)
+    }
+
+    private fun expiry(seconds: Long?): Long? = seconds?.let { System.currentTimeMillis() + it * 1000 }
 
     private fun persist(s: AuthState) {
         secure.put(K.MODE, s.mode.name)

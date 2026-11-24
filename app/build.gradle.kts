@@ -16,8 +16,8 @@ android {
         applicationId = "com.maikeldorta.rommmobiles"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.0.3-rc.1"
+        versionCode = 11
+        versionName = "1.0.3"
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
         resourceConfigurations += listOf("en", "it")
@@ -48,11 +48,13 @@ android {
 
     packaging {
         resources {
-            excludes += setOf(
+            merges += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
                 "/META-INF/LICENSE*",
                 "/META-INF/NOTICE*",
                 "/META-INF/DEPENDENCIES",
+            )
+            excludes += setOf(
                 "/META-INF/*.kotlin_module",
                 "/META-INF/versions/9/OSGI-INF/MANIFEST.MF",
             )

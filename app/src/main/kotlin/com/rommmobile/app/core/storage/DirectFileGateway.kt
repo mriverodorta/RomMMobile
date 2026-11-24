@@ -4,6 +4,7 @@ import android.os.StatFs
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.nio.file.Files
 
 class DirectFileGateway(override val root: StorageRoot.Direct) : FileGateway {
 
@@ -71,14 +72,7 @@ class DirectFileGateway(override val root: StorageRoot.Direct) : FileGateway {
         if (!ensureDir(toRelDir)) return false
         val src = File(dir(fromRelDir), name)
         val dst = File(dir(toRelDir), name)
-        if (dst.exists()) { if (dst.isDirectory) dst.deleteRecursively() else dst.delete() }
-        if (src.renameTo(dst)) return true
-        if (src.isDirectory) {
-            val ok = src.copyRecursively(dst, overwrite = true)
-            if (ok) src.deleteRecursively()
-            return ok
-        }
-        return moveIn(src, toRelDir, name)
+        return runCatching { Files.move(src.toPath(), dst.toPath()) }.isSuccess
     }
 
     override fun sizeOf(relDir: String, name: String): Long = File(dir(relDir), name).let { if (it.exists()) it.length() else -1L }

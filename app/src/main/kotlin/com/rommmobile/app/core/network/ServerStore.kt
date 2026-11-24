@@ -37,7 +37,8 @@ data class ServerConfig(
 ) {
     val activeHttpUrl: HttpUrl? get() = activeUrl?.toHttpUrlOrNull()
     val isConfigured: Boolean get() = !baseUrl.isNullOrBlank()
-    val knownHosts: Set<String> get() = listOfNotNull(baseUrl?.toHttpUrlOrNull()?.host, remoteUrl?.toHttpUrlOrNull()?.host).toSet()
+    fun isKnownOrigin(url: HttpUrl): Boolean =
+        listOfNotNull(baseUrl, remoteUrl).any { it.toHttpUrlOrNull()?.sameOrigin(url) == true }
 }
 
 /**

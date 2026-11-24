@@ -209,28 +209,35 @@ class SafFileGateway(private val context: Context, override val root: StorageRoo
         val child = childByName(fromRelDir, name) ?: return false
         val fromId = dirDocId(fromRelDir, create = false) ?: return false
         val toId = dirDocId(toRelDir, create = true) ?: return false
-        childByName(toRelDir, name)?.let { existing ->
-            runCatching { DocumentsContract.deleteDocument(resolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, existing.docId)) }
-        }
-        // moveDocument is known to throw even when it succeeded: always re-check by listing.
-        runCatching {
+        if (childByName(toRelDir, name) != null) return false
+        val srcUri = documentUri(child)
+        val movedUri = runCatching {
             DocumentsContract.moveDocument(
                 resolver,
-                DocumentsContract.buildDocumentUriUsingTree(treeUri, child.docId),
+                srcUri,
                 DocumentsContract.buildDocumentUriUsingTree(treeUri, fromId),
                 DocumentsContract.buildDocumentUriUsingTree(treeUri, toId),
             )
-        }
+        }.getOrNull()
         dirCache.keys.removeAll { it.startsWith("$fromRelDir/$name".trimStart('/')) }
         val moved = childByName(toRelDir, name)
-        if (moved != null && (moved.isDir || moved.size == child.size)) return true
-        // Provider without move support: stream copy for plain files.
-        if (child.isDir) return false
-        val srcUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, child.docId)
-        resolver.openInputStream(srcUri)?.use { input -> openOutput(toRelDir, name).use { input.copyTo(it, 1 shl 18) } } ?: return false
-        if (sizeOf(toRelDir, name) != child.size) { delete(toRelDir, name); return false }
-        runCatching { DocumentsContract.deleteDocument(resolver, srcUri) }
-        return true
+        if (moved != null) return movedUri?.let(DocumentsContract::getDocumentId) == moved.docId ||
+            (moved.docId == child.docId && childByName(fromRelDir, name) == null)
+        if (movedUri != null || child.isDir) return false
+        // Copy through a unique staging file for providers that cannot move documents.
+        val temp = ".rommmobiles-copy-${java.util.UUID.randomUUID()}"
+        try {
+            resolver.openInputStream(srcUri)?.use { input ->
+                openOutput(toRelDir, temp).use { input.copyTo(it, 1 shl 18) }
+            } ?: return false
+            val copy = childByName(toRelDir, temp) ?: return false
+            if (copy.size != child.size || childByName(toRelDir, name) != null) return false
+            return rename(copy, name).let { published ->
+                childByName(toRelDir, name)?.docId == DocumentsContract.getDocumentId(published)
+            }
+        } finally {
+            runCatching { delete(toRelDir, temp) }
+        }
     }
 
     override fun sizeOf(relDir: String, name: String): Long = childByName(relDir, name)?.size ?: -1L

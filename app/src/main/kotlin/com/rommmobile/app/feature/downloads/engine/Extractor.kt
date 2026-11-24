@@ -108,18 +108,26 @@ class Extractor(private val gateway: FileGateway) {
      * Publishes the staged entries. If one move fails the ones already published are removed
      * again: a frontend must never be left with half a game.
      */
-    private fun finish(relDir: String, staging: String, top: List<String>, written: Long): Result {
+    private fun finish(relDir: String, staging: String, top: List<String>, written: Long): Result =
+        synchronized(publishLock) {
         val stagingName = staging.substringAfterLast('/')
+        top.firstOrNull { gateway.exists(relDir, it) }?.let {
+            throw IOException("destination already exists: $it")
+        }
         val moved = ArrayList<String>(top.size)
-        for (name in top) {
-            if (!gateway.moveWithin(staging, name, relDir)) {
-                moved.forEach { runCatching { gateway.delete(relDir, it) } }
-                throw IOException("cannot move $name into place")
+        try {
+            for (name in top) {
+                if (!gateway.moveWithin(staging, name, relDir)) {
+                    throw IOException("cannot move $name into place")
+                }
+                moved += name
             }
-            moved += name
+        } catch (failure: Exception) {
+            moved.forEach { runCatching { gateway.delete(relDir, it) } }
+            throw failure
         }
         gateway.delete(relDir, stagingName)
-        return Result(top, written)
+        Result(top, written)
     }
 
     private fun sanitize(raw: String): String? {
@@ -143,6 +151,7 @@ class Extractor(private val gateway: FileGateway) {
     }
 
     companion object {
+        private val publishLock = Any()
         fun isZip(name: String) = name.endsWith(".zip", ignoreCase = true)
         fun is7z(name: String) = name.endsWith(".7z", ignoreCase = true)
     }

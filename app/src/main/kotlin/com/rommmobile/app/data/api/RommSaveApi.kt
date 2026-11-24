@@ -100,6 +100,7 @@ data class SaveSyncOperation(
     val slot: String? = null,
     val emulator: String? = null,
     @SerialName("server_content_hash") val hash: String? = null,
+    @SerialName("server_updated_at") val serverUpdatedAt: String? = null,
 )
 
 @Serializable

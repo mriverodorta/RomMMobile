@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Authenticator
 import okhttp3.FormBody
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -70,12 +72,51 @@ class CleartextPolicyInterceptor @Inject constructor(
         }
     }
     override fun intercept(chain: Interceptor.Chain): Response {
-        val url = chain.request().url
+        var request = chain.request()
+        for (hop in 0..10) {
+            checkCleartext(request.url)
+            val response = chain.proceed(request)
+            val next = redirectRequest(response) ?: return response
+            response.close()
+            if (hop == 10) throw java.net.ProtocolException("Too many redirects")
+            request = next
+        }
+        error("Unreachable redirect limit")
+    }
+
+    private fun checkCleartext(url: HttpUrl) {
         if (!url.isHttps && !UrlNormalizer.isPrivateHost(url.host) && !allowInsecureRemote) {
             throw ApiException(ApiErrorKind.CLEARTEXT_BLOCKED, endpoint = url.host)
         }
-        return chain.proceed(chain.request())
     }
+}
+
+internal fun HttpUrl.sameOrigin(other: HttpUrl): Boolean =
+    scheme == other.scheme && host == other.host && port == other.port
+
+internal fun redirectRequest(response: Response): Request? {
+    if (response.code !in setOf(300, 301, 302, 303, 307, 308)) return null
+    val request = response.request
+    val target = response.header("Location")?.let(request.url::resolve) ?: return null
+    if (request.url.isHttps && !target.isHttps) return null
+    val sameOrigin = request.url.sameOrigin(target)
+    val safeMethod = request.method == "GET" || request.method == "HEAD"
+    if (!sameOrigin && !safeMethod) return null
+    val next = request.newBuilder().url(target)
+    if (!sameOrigin) {
+        for (header in listOf("Authorization", "Proxy-Authorization", "Cookie", "CF-Access-Client-Id", "CF-Access-Client-Secret")) {
+            next.removeHeader(header)
+        }
+        next.tag(AuthRequest::class.java, null)
+    }
+    if (!safeMethod) {
+        if (response.code == 307 || response.code == 308) {
+            if (request.body?.isOneShot() == true || request.body?.isDuplex() == true) return null
+        } else {
+            next.get().removeHeader("Content-Type").removeHeader("Content-Length").removeHeader("Transfer-Encoding")
+        }
+    }
+    return next.build()
 }
 
 /**
@@ -90,10 +131,13 @@ class AuthInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val cfg = serverStore.config.value
-        if (request.url.host !in cfg.knownHosts) return chain.proceed(request)
+        if (!cfg.isKnownOrigin(request.url)) return chain.proceed(request)
         val builder = request.newBuilder()
         if (request.header("Authorization") == null) {
-            authStore.state.value.authorizationHeader()?.let { builder.header("Authorization", it) }
+            val credentials = authStore.requestCredentials()
+            credentials.state.authorizationHeader()?.let {
+                builder.header("Authorization", it).tag(AuthRequest::class.java, credentials)
+            }
         }
         applyCloudflareHeaders(builder, cfg)
         builder.header("Accept", request.header("Accept") ?: "application/json, */*;q=0.8")
@@ -175,72 +219,71 @@ class TokenAuthenticator @Inject constructor(
     private val authStore: AuthStore,
     private val serverStore: ServerStore,
     private val json: Json,
+    cleartext: CleartextPolicyInterceptor,
 ) : Authenticator {
-
-    /** Bare client for the refresh call: no authenticator, no error mapping. */
-    private val refreshClient: OkHttpClient by lazy { OkHttpClient.Builder().build() }
+    private val refreshClient = OkHttpClient.Builder()
+        .followRedirects(false)
+        .addInterceptor(cleartext)
+        .build()
     private val refreshing = AtomicBoolean(false)
 
     override fun authenticate(route: Route?, response: Response): Request? {
         val cfg = serverStore.config.value
-        if (response.request.url.host !in cfg.knownHosts) return null
-        if (responseCount(response) >= 2) return giveUp()
+        val request = response.request
+        val original = request.tag(AuthRequest::class.java) ?: return null
+        val base = listOfNotNull(cfg.baseUrl, cfg.remoteUrl).mapNotNull { it.toHttpUrlOrNull() }
+            .firstOrNull { it.sameOrigin(request.url) } ?: return null
+        val credentials = authStore.requestCredentials()
+        if (credentials.session != original.session) return null
+        if (credentials.state.authorizationHeader() != request.header("Authorization")) {
+            return request.withCredentials(credentials)
+        }
+        if (responseCount(response) >= 2) return giveUp(credentials)
+        if (credentials.state.mode != AuthMode.OAUTH) return giveUp(credentials)
+        val refreshToken = credentials.state.refreshToken ?: return giveUp(credentials)
 
-        val state = authStore.state.value
-        when (state.mode) {
-            AuthMode.OAUTH -> {
-                val sentHeader = response.request.header("Authorization")
-                val current = state.authorizationHeader()
-                // Another thread already refreshed: just retry with the new token.
-                if (sentHeader != null && current != null && sentHeader != current) {
-                    return response.request.newBuilder().header("Authorization", current).build()
-                }
-                val refresh = state.refreshToken ?: return giveUp()
-                if (!refreshing.compareAndSet(false, true)) {
-                    // Another thread is refreshing. Wait for the token to actually change before
-                    // retrying: retrying with the old one would burn this request's last attempt
-                    // and clear a session that is about to become valid again.
-                    val before = state.accessToken
-                    repeat(20) {
-                        Thread.sleep(150)
-                        val now = authStore.state.value
-                        if (!now.isLoggedIn) return null
-                        val header = now.authorizationHeader()
-                        if (now.accessToken != before && header != null) {
-                            return response.request.newBuilder().header("Authorization", header).build()
-                        }
-                    }
-                    return null
-                }
-                try {
-                    val base = cfg.activeHttpUrl ?: return giveUp()
-                    val tokenUrl = base.newBuilder().encodedPath(base.encodedPath.trimEnd('/') + "/api/token").build()
-                    val form = FormBody.Builder().add("grant_type", "refresh_token").add("refresh_token", refresh).build()
-                    // Same Cloudflare headers as any other request: without them a protected
-                    // tunnel answers with its login page and the session would be wiped.
-                    val req = Request.Builder().url(tokenUrl).post(form).apply { applyCloudflareHeaders(this, cfg) }.build()
-                    refreshClient.newCall(req).execute().use { r ->
-                        if (!r.isSuccessful) return giveUp()
-                        val obj = json.parseToJsonElement(r.body.string()).jsonObject
-                        val access = obj["access_token"]?.jsonPrimitive?.content ?: return giveUp()
-                        val newRefresh = obj["refresh_token"]?.jsonPrimitive?.content ?: refresh
-                        val expires = obj["expires"]?.jsonPrimitive?.content?.toLongOrNull()
-                        authStore.setOAuth(access, newRefresh, expires, state.username)
-                        return response.request.newBuilder().header("Authorization", "Bearer $access").build()
-                    }
-                } catch (_: Throwable) {
-                    return giveUp()
-                } finally {
-                    refreshing.set(false)
-                }
+        if (!refreshing.compareAndSet(false, true)) {
+            repeat(20) {
+                Thread.sleep(150)
+                val current = authStore.requestCredentials()
+                if (current.session != credentials.session) return null
+                if (current.state.accessToken != credentials.state.accessToken) return request.withCredentials(current)
             }
-            AuthMode.CLIENT_TOKEN, AuthMode.BASIC -> return giveUp()
-            AuthMode.NONE -> return null
+            return null
+        }
+
+        try {
+            val current = authStore.requestCredentials()
+            if (current.session != credentials.session) return null
+            if (current.state.accessToken != credentials.state.accessToken) return request.withCredentials(current)
+
+            val tokenUrl = base.newBuilder().encodedPath(base.encodedPath.trimEnd('/') + "/api/token").build()
+            val form = FormBody.Builder().add("grant_type", "refresh_token").add("refresh_token", refreshToken).build()
+            val refreshRequest = Request.Builder().url(tokenUrl).post(form).apply { applyCloudflareHeaders(this, cfg) }.build()
+            refreshClient.newCall(refreshRequest).execute().use { result ->
+                if (result.code in listOf(400, 401, 403)) return giveUp(credentials)
+                if (!result.isSuccessful) return null
+                val obj = json.parseToJsonElement(result.body.string()).jsonObject
+                val access = obj["access_token"]?.jsonPrimitive?.content ?: return null
+                val newRefresh = obj["refresh_token"]?.jsonPrimitive?.content ?: refreshToken
+                val expires = obj["expires"]?.jsonPrimitive?.content?.toLongOrNull()
+                val updated = authStore.refresh(credentials, access, newRefresh, expires) ?: return null
+                return request.withCredentials(updated)
+            }
+        } catch (_: Exception) {
+            return null
+        } finally {
+            refreshing.set(false)
         }
     }
 
-    private fun giveUp(): Request? {
-        if (authStore.state.value.isLoggedIn) authStore.clear(notify = true)
+    private fun Request.withCredentials(credentials: AuthRequest): Request? =
+        credentials.state.authorizationHeader()?.let {
+            newBuilder().header("Authorization", it).tag(AuthRequest::class.java, credentials).build()
+        }
+
+    private fun giveUp(credentials: AuthRequest): Request? {
+        authStore.expire(credentials)
         return null
     }
 

@@ -29,7 +29,7 @@ interface FileGateway {
     /** Moves a private temp file into place. Verified by size afterwards, never trusted blindly. */
     fun moveIn(src: File, relDir: String, name: String): Boolean
     fun delete(relDir: String, name: String): Boolean
-    /** Moves an entry between two directories under the same root (rename when possible). */
+    /** Publishes a new entry between directories under the same root without replacing an existing entry. */
     fun moveWithin(fromRelDir: String, name: String, toRelDir: String): Boolean
     fun sizeOf(relDir: String, name: String): Long
     fun freeSpaceBytes(): Long

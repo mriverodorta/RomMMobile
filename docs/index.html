@@ -7,6 +7,7 @@
   <meta name="color-scheme" content="dark">
   <title>RomMMobileS — RomM for Android handhelds</title>
   <link rel="stylesheet" href="site.css">
+  <script src="tester-signup.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -85,11 +86,20 @@
         <div class="section-label">Google Play closed test</div>
         <h2>Help test RomMMobileS.</h2>
         <p>We’re looking for Android users to try the app and share feedback before its Google Play release.</p>
-        <a class="button" href="mailto:mriverodorta@gmail.com?subject=RomMMobileS%20Google%20Play%20tester%20request">Request a tester invite <span aria-hidden="true">↗</span></a>
       </div>
       <div>
-        <p>Email us from the address you use for Google Play. You can include your handheld or phone model.</p>
         <p>Once the closed test opens, invited testers can opt in through Google Play. Plan to stay opted in for at least 14 consecutive days.</p>
+        <form class="tester-form" id="tester-signup" action="https://rommmobiles.hkloud.org/api/testers" method="post">
+          <label for="tester-email">Email address you use for Google Play</label>
+          <input id="tester-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+          <div hidden>
+            <label for="tester-website">Leave this field empty</label>
+            <input id="tester-website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <button class="button" type="submit" disabled>Request a tester invite</button>
+          <p id="tester-status" role="status"></p>
+        </form>
+        <p class="fine"><a href="privacy/">Privacy policy</a> · <a href="mailto:mriverodorta@gmail.com?subject=RomMMobileS%20Google%20Play%20tester%20request">Request by email</a></p>
       </div>
     </section>
   </main>

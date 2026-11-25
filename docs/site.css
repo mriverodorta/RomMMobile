@@ -111,6 +111,20 @@ p { margin: 0 0 .9rem; }
 .setup ol { margin: 0; padding: 0 0 0 1.6rem; }
 .setup li { padding: .8rem 0 .8rem .4rem; border-bottom: 1px solid var(--rule); }
 .setup li::marker { color: var(--accent); font-weight: 700; }
+.tester-form { display: grid; gap: .65rem; margin-block: 1rem; }
+.tester-form input {
+  min-width: 0;
+  padding: .65rem .8rem;
+  border: 1px solid #71806c;
+  border-radius: .45rem;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+}
+.tester-form .button { justify-self: start; border: 0; font: inherit; font-weight: 700; cursor: pointer; }
+.tester-form :is(input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.tester-form button:disabled { opacity: .65; cursor: wait; }
+#tester-status { margin: 0; }
 .notes h2 { font-size: 1.5rem; }
 .notes p { margin: 0; }
 .footer { border-top: 1px solid var(--rule); border-bottom: 0; color: var(--muted); font-size: .9rem; }

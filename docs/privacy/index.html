@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Learn how RomMMobileS handles your server connection, local files, save data, and diagnostics.">
+  <meta name="color-scheme" content="dark">
+  <title>Privacy Policy — RomMMobileS</title>
+  <link rel="stylesheet" href="../site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="bar wrap">
+    <a class="brand" href="../"><span class="mark" aria-hidden="true">R</span> RomMMobileS</a>
+    <nav aria-label="Main navigation"><a href="../">Project home</a></nav>
+  </header>
+
+  <main id="main" class="wrap policy">
+    <h1>RomMMobileS Privacy Policy</h1>
+    <p class="fine">Effective November 25, 2026</p>
+    <p class="lede">RomMMobileS is an Android app maintained by HKloud. It connects to the RomM server you select to browse your library, download files, and optionally sync emulator saves.</p>
+
+    <h2>Your RomM account and server</h2>
+    <p>The app sends sign-in credentials or tokens to your chosen RomM server. It can also send Cloudflare Access credentials when you enable that connection option. The app encrypts saved credentials and tokens on your device using Android Keystore.</p>
+    <p>The app downloads library information and the files you request from your configured server. Cover images may load from image hosts referenced by that library. Those hosts receive the connection information needed to serve the image.</p>
+    <p>HTTPS encrypts traffic in transit. The app also supports HTTP connections, including on local networks. HTTP does not encrypt the data sent over that connection.</p>
+
+    <h2>Files and save sync</h2>
+    <p>When you grant folder access, the app reads the selected folders to identify ROMs and emulator settings, and writes downloads or saves there. If you enable All Files Access, Android lets the app access shared storage more broadly. The app uses that access to find files, write to your chosen destinations, and watch save folders.</p>
+    <p>When save sync is enabled, the app sends the selected save types and related information to your RomM server. This can include filenames, file hashes, timestamps, and game identifiers. RomM also receives information to identify the syncing device, such as its model and a device identifier. The server stores the save files and controls the retention of its copies.</p>
+    <p>With Usage Access enabled, the app checks RetroArch activity and timestamps on your device to decide when it can safely restore a save. It does not upload this Android usage history.</p>
+
+    <h2>Diagnostics and the website</h2>
+    <p>The app keeps a rotating diagnostic log on your device. It can include errors, server information, and file paths. If you export or share a log, review its contents and choose who receives it. The app does not automatically send those logs to HKloud.</p>
+    <p>GitHub Pages hosts this site and may log connection information such as an IP address for security. See the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</p>
+
+    <h2>Retention and deletion</h2>
+    <p>Signing out clears local sign-in credentials. Clearing the app’s storage or uninstalling it removes its private settings, cache, logs, and recovery copies. Downloads and saves in shared folders remain there until you delete them. Exported files remain where you saved or shared them.</p>
+    <p>Manage server-side data through RomM or contact the operator of your RomM server. You can stop background save sync and revoke Android folder or Usage Access permissions at any time.</p>
+
+    <h2>Contact</h2>
+    <p>Send questions about this policy to HKloud at <a href="mailto:mriverodorta@gmail.com">mriverodorta@gmail.com</a>. Keep passwords and access tokens out of your message.</p>
+  </main>
+
+  <footer class="bar wrap footer">
+    <a href="../">RomMMobileS</a>
+    <a href="https://github.com/mriverodorta/RomMMobileS">Source on GitHub</a>
+  </footer>
+</body>
+</html>

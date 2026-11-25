@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RomMMobileS brings your self-hosted RomM library to Android handhelds and syncs RetroArch saves and states between devices.">
+  <meta name="color-scheme" content="dark">
+  <title>RomMMobileS — RomM for Android handhelds</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="bar wrap">
+    <a class="brand" href="./"><span class="mark" aria-hidden="true">R</span> RomMMobileS</a>
+    <nav aria-label="Main navigation">
+      <a href="#features">Features</a>
+      <a href="#setup">Setup</a>
+      <a href="privacy/">Privacy</a>
+    </nav>
+  </header>
+
+  <main id="main" class="wrap">
+    <section class="hero">
+      <div>
+        <p class="kicker">RomM for Android handhelds</p>
+        <h1>Pick up where<br class="wide-break"> you left off.</h1>
+        <p class="lede">Download games from your self-hosted RomM library and carry your RetroArch saves between handhelds.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/mriverodorta/RomMMobileS/releases/latest">Download APK <span aria-hidden="true">↗</span></a>
+          <a class="secondary" href="#setup">Set up save sync <span aria-hidden="true">↓</span></a>
+        </div>
+        <p class="fine">Android 8 or later · RomM 5.x</p>
+      </div>
+
+      <figure class="route">
+        <figcaption class="route-title"><span class="lamp" aria-hidden="true"></span> How your progress travels</figcaption>
+        <ol>
+          <li><span class="node" aria-hidden="true"></span><div><strong>First handheld</strong><span>Play and save in RetroArch</span></div></li>
+          <li><span class="node server" aria-hidden="true"></span><div><strong>Your RomM server</strong><span>Holds synced battery saves and states</span></div></li>
+          <li><span class="node" aria-hidden="true"></span><div><strong>Second handheld</strong><span>Restore when RetroArch is ready</span></div></li>
+        </ol>
+      </figure>
+    </section>
+
+    <section id="features" class="section">
+      <div class="section-label">Features</div>
+      <div class="features">
+        <article>
+          <h2>Keep your progress.</h2>
+          <p>Sync in-game saves and save states separately. RomMMobileS reads your ES-DE setup and can restore incoming files when RetroArch has quit.</p>
+        </article>
+        <article>
+          <h2>Take your library.</h2>
+          <p>Browse platforms and collections, check what is installed, and download games and BIOS files into your frontend’s folders.</p>
+        </article>
+        <article>
+          <h2>Use your own server.</h2>
+          <p>Connect to the RomM server you run. Use an HTTP address on your local network or an HTTPS address for remote access.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="setup" class="section setup">
+      <div>
+        <div class="section-label">Setup</div>
+        <h2>Start with your handheld.</h2>
+        <p>Save sync was tested with RomM 5.4.1, ES-DE, and RetroArch on Retroid Pocket Classic and Anbernic RG476H.</p>
+        <a class="secondary" href="https://github.com/mriverodorta/RomMMobileS#setup-automatic-save-and-state-sync">Read the full setup guide <span aria-hidden="true">↗</span></a>
+      </div>
+      <ol>
+        <li><strong>Install and connect.</strong> Install the signed APK and sign in to your RomM server.</li>
+        <li><strong>Choose your folders.</strong> Select ES-DE and the ROM folder it uses. Grant access to your shared RetroArch save folders.</li>
+        <li><strong>Turn on save sync.</strong> Choose battery saves, states, or both. Grant Usage Access for automatic restore.</li>
+      </ol>
+    </section>
+
+    <section class="section notes" aria-label="Save sync requirements">
+      <h2>Before you switch devices</h2>
+      <p>Use the same RomM account and matching ROM files on each device. Save states also need compatible RetroArch core builds.</p>
+    </section>
+  </main>
+
+  <footer class="bar wrap footer">
+    <span>RomMMobileS · Independent fork of <a href="https://github.com/pippopapera/RomMMobile">RomMMobile</a></span>
+    <nav aria-label="Project links">
+      <a href="https://github.com/mriverodorta/RomMMobileS">Source on GitHub</a>
+      <a href="privacy/">Privacy Policy</a>
+    </nav>
+  </footer>
+</body>
+</html>

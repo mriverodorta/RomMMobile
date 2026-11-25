@@ -22,11 +22,12 @@
 
     <h2>Your RomM account and server</h2>
     <p>The app sends sign-in credentials or tokens to your chosen RomM server. It can also send Cloudflare Access credentials when you enable that connection option. The app encrypts saved credentials and tokens on your device using Android Keystore.</p>
+    <p>If you request a pairing code, RomMMobileS sends your device model and identifier to your RomM server to create the pairing request.</p>
     <p>The app downloads library information and the files you request from your configured server. Cover images may load from image hosts referenced by that library. Those hosts receive the connection information needed to serve the image.</p>
-    <p>HTTPS encrypts traffic in transit. The app also supports HTTP connections, including on local networks. HTTP does not encrypt the data sent over that connection.</p>
+    <p>The Google Play build uses HTTPS to encrypt connections in transit. The GitHub build also supports HTTP connections, including on local networks. HTTP does not encrypt the data sent over that connection.</p>
 
     <h2>Files and save sync</h2>
-    <p>When you grant folder access, the app reads the selected folders to identify ROMs and emulator settings, and writes downloads or saves there. If you enable All Files Access, Android lets the app access shared storage more broadly. The app uses that access to find files, write to your chosen destinations, and watch save folders.</p>
+    <p>When you grant folder access, the app reads the selected folders to identify ROMs and emulator settings, and writes downloads or saves there. In the GitHub build, you can enable optional All Files Access. The app uses that access to find files, write to your chosen destinations, and watch save folders.</p>
     <p>When save sync is enabled, the app sends the selected save types and related information to your RomM server. This can include filenames, file hashes, timestamps, and game identifiers. RomM also receives information to identify the syncing device, such as its model and a device identifier. The server stores the save files and controls the retention of its copies.</p>
     <p>With Usage Access enabled, the app checks RetroArch activity and timestamps on your device to decide when it can safely restore a save. It does not upload this Android usage history.</p>
 

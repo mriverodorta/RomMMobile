@@ -121,6 +121,7 @@ class DownloadRepository @Inject constructor(
                 createdAt = now,
                 updatedAt = now,
                 completedAt = null,
+                preserveOriginalFilename = s.preserveOriginalRomFilenames,
             )
             )
         } catch (e: android.database.sqlite.SQLiteConstraintException) {

@@ -2,7 +2,7 @@
 
 RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopapera/RomMMobile) for Android handhelds and Android TV. Browse your [RomM](https://romm.app) library and download games into the folders your frontend uses. With ES-DE, you can sync battery saves and save states for RetroArch and supported standalone emulators.
 
-**[Download RomMMobileS 1.0.5 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/rommmobiles-v1.0.5/RomMMobileS-1.0.5.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/rommmobiles-v1.0.5) · [Privacy policy](https://mriverodorta.github.io/RomMMobileS/privacy/)
+**[Download RomMMobileS 1.0.6 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/rommmobiles-v1.0.6/RomMMobileS-1.0.6.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/rommmobiles-v1.0.6) · [Privacy policy](https://mriverodorta.github.io/RomMMobileS/privacy/)
 
 🇮🇹 [Original upstream README in Italian](README.it-IT.md)
 
@@ -40,6 +40,12 @@ RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopaper
 Everything can be changed later from **Settings**.
 
 The GitHub APK supports HTTPS and local HTTP. It offers **All Files Access** as an option. The separate Google Play build requires HTTPS and uses Android's folder picker.
+
+### Preserve original ROM filenames
+
+Open **Settings → Downloads → Preserve original ROM filenames** to keep the filename from your RomM library, including region, revision, and patch tags. The option is **off by default**. With it off, the app can use the filename supplied in the server's download response.
+
+The app applies the setting when you queue a new download. Existing downloads and installed ROMs keep their current names.
 
 ## Set up automatic save and state sync
 
@@ -118,7 +124,7 @@ The reading order is the number order, like the three trials to become a pirate.
 
 ## Building from source
 
-Check out the [release source tag](https://github.com/mriverodorta/RomMMobileS/tree/rommmobiles-v1.0.5) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
+Check out the [release source tag](https://github.com/mriverodorta/RomMMobileS/tree/rommmobiles-v1.0.6) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
 
 ```bash
 bash gradlew :app:assembleRelease
@@ -134,7 +140,7 @@ Stack: Kotlin 2.3, Jetpack Compose, Hilt, Room, Paging 3, DataStore, Coil 3, OkH
 
 ## Status
 
-Version **1.0.5** is the current GitHub release. See the release notes for the save sync changes and upgrade instructions.
+Version **1.0.6** is the current GitHub release. See the release notes for the latest changes and upgrade instructions.
 
 Bug reports and ideas: open an issue on this repository. If you see a three-headed monkey behind you, attach a screenshot.
 

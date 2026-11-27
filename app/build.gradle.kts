@@ -16,8 +16,8 @@ android {
         applicationId = "com.maikeldorta.rommmobiles"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.0.5"
+        versionCode = 15
+        versionName = "1.0.6"
         manifestPlaceholders["leanbackRequired"] = "false"
         buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "true")
         buildConfigField("boolean", "DIRECT_HTTP_AVAILABLE", "true")

@@ -75,6 +75,7 @@ data class Settings(
     val sortDescending: Boolean,
     val concurrency: Int,
     val wifiOnly: Boolean,
+    val preserveOriginalRomFilenames: Boolean,
     val autoExtractZip: Boolean,
     val autoExtract7z: Boolean,
     val folderPerGameSlugs: Set<String>,
@@ -114,6 +115,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val sortDesc = booleanPreferencesKey("sort_desc")
         val concurrency = intPreferencesKey("concurrency")
         val wifiOnly = booleanPreferencesKey("wifi_only")
+        val preserveOriginalRomFilenames = booleanPreferencesKey("preserve_original_rom_filenames")
         val autoExtractZip = booleanPreferencesKey("auto_extract_zip")
         val autoExtract7z = booleanPreferencesKey("auto_extract_7z")
         val folderPerGame = stringSetPreferencesKey("folder_per_game")
@@ -141,6 +143,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             sortDescending = p[K.sortDesc] ?: false,
             concurrency = (p[K.concurrency] ?: 2).coerceIn(1, 5),
             wifiOnly = p[K.wifiOnly] ?: false,
+            preserveOriginalRomFilenames = p[K.preserveOriginalRomFilenames] ?: false,
             autoExtractZip = p[K.autoExtractZip] ?: true,
             autoExtract7z = p[K.autoExtract7z] ?: false,
             folderPerGameSlugs = if (p[K.folderPerGameCustomized] == true) (p[K.folderPerGame] ?: emptySet()) else DEFAULT_FOLDER_PER_GAME,
@@ -209,6 +212,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     suspend fun setSort(field: SortField, descending: Boolean) = ds.edit { it[K.sortField] = field.name; it[K.sortDesc] = descending }
     suspend fun setConcurrency(v: Int) = ds.edit { it[K.concurrency] = v.coerceIn(1, 5) }
     suspend fun setWifiOnly(v: Boolean) = ds.edit { it[K.wifiOnly] = v }
+    suspend fun setPreserveOriginalRomFilenames(v: Boolean) = ds.edit { it[K.preserveOriginalRomFilenames] = v }
     suspend fun setAutoExtractZip(v: Boolean) = ds.edit { it[K.autoExtractZip] = v }
     suspend fun setAutoExtract7z(v: Boolean) = ds.edit { it[K.autoExtract7z] = v }
     suspend fun setFolderPerGame(slugs: Set<String>) = ds.edit { it[K.folderPerGame] = slugs; it[K.folderPerGameCustomized] = true }

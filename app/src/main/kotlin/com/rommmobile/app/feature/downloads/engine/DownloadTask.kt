@@ -126,10 +126,15 @@ class DownloadTask(
                     else -> null
                 }
                 val total = declaredTotal ?: entity.totalBytes
-                val serverName = parseContentDisposition(r.header("Content-Disposition"))
-                if (serverName != null && serverName != entity.fileName && entity.md5 == null) {
-                    dao.setFileName(entity.id, serverName)
-                    entity = entity.copy(fileName = serverName)
+                val fileName = downloadFileNameForResponse(
+                    entity.fileName,
+                    r.header("Content-Disposition"),
+                    hasMd5 = entity.md5 != null,
+                    preserveOriginal = entity.preserveOriginalFilename,
+                )
+                if (fileName != entity.fileName) {
+                    dao.setFileName(entity.id, fileName)
+                    entity = entity.copy(fileName = fileName)
                 }
                 if (total > 0) dao.setProgress(entity.id, existing, total)
                 entity = entity.copy(totalBytes = total)
@@ -299,15 +304,6 @@ class DownloadTask(
     private fun parseContentRangeTotal(header: String?): Long? =
         header?.substringAfter('/', "")?.trim()?.takeIf { it.isNotEmpty() && it != "*" }?.toLongOrNull()
 
-    private fun parseContentDisposition(header: String?): String? {
-        if (header == null) return null
-        Regex("filename\\*=(?:UTF-8|utf-8)''([^;]+)").find(header)?.groupValues?.get(1)?.let {
-            return runCatching { java.net.URLDecoder.decode(it.trim(), "UTF-8") }.getOrNull()?.substringAfterLast('/')?.takeIf { n -> n.isNotBlank() }
-        }
-        Regex("filename=\"?([^\";]+)\"?").find(header)?.groupValues?.get(1)?.let { return it.trim().substringAfterLast('/').takeIf { n -> n.isNotBlank() } }
-        return null
-    }
-
     /** Streaming md5 / sha1 / crc32 verifier; re-fed from disk on resume. */
     private class Hasher private constructor(private val algo: String, private val expected: String) {
         private var digest: MessageDigest? = if (algo == "crc") null else MessageDigest.getInstance(algo)
@@ -362,6 +358,25 @@ class DownloadTask(
             return value
         }
     }
+}
+
+internal fun downloadFileNameForResponse(
+    queuedName: String,
+    contentDisposition: String?,
+    hasMd5: Boolean,
+    preserveOriginal: Boolean,
+): String {
+    if (preserveOriginal || hasMd5) return queuedName
+    return parseContentDisposition(contentDisposition) ?: queuedName
+}
+
+private fun parseContentDisposition(header: String?): String? {
+    if (header == null) return null
+    Regex("filename\\*=(?:UTF-8|utf-8)''([^;]+)").find(header)?.groupValues?.get(1)?.let {
+        return runCatching { java.net.URLDecoder.decode(it.trim(), "UTF-8") }.getOrNull()?.substringAfterLast('/')?.takeIf { n -> n.isNotBlank() }
+    }
+    Regex("filename=\"?([^\";]+)\"?").find(header)?.groupValues?.get(1)?.let { return it.trim().substringAfterLast('/').takeIf { n -> n.isNotBlank() } }
+    return null
 }
 
 internal fun publishFirmware(gateway: FileGateway, part: File, name: String, downloadId: Long): Boolean {

@@ -103,6 +103,7 @@ class SettingsViewModel @Inject constructor(
     fun setRoot(root: StorageRoot) = viewModelScope.launch { store.setStorageRoot(root); mapping.resetAutomatic(); localLibrary.rescanAll() }
     fun setConcurrency(n: Int) = viewModelScope.launch { store.setConcurrency(n) }
     fun setWifiOnly(v: Boolean) = viewModelScope.launch { store.setWifiOnly(v) }
+    fun setPreserveOriginalRomFilenames(v: Boolean) = viewModelScope.launch { store.setPreserveOriginalRomFilenames(v) }
     fun setExtractZip(v: Boolean) = viewModelScope.launch { store.setAutoExtractZip(v) }
     fun setExtract7z(v: Boolean) = viewModelScope.launch { store.setAutoExtract7z(v) }
     fun setMargin(v: Int) = viewModelScope.launch { store.setScreenMargin(v) }
@@ -196,6 +197,12 @@ fun SettingsScreen(
             SectionHeader(stringResource(R.string.settings_downloads))
             SettingRow(stringResource(R.string.settings_concurrency), subtitle = s.concurrency.toString(), onClick = { dialog = "concurrency" })
             SwitchRow(stringResource(R.string.settings_wifi_only), s.wifiOnly, vm::setWifiOnly)
+            SwitchRow(
+                stringResource(R.string.settings_preserve_rom_filenames),
+                s.preserveOriginalRomFilenames,
+                vm::setPreserveOriginalRomFilenames,
+                subtitle = stringResource(R.string.settings_preserve_rom_filenames_hint),
+            )
             SwitchRow(stringResource(R.string.settings_extract_zip), s.autoExtractZip, vm::setExtractZip, subtitle = stringResource(R.string.settings_extract_zip_hint))
             SwitchRow(stringResource(R.string.settings_extract_7z), s.autoExtract7z, vm::setExtract7z, subtitle = stringResource(R.string.settings_extract_7z_hint))
             SettingRow(

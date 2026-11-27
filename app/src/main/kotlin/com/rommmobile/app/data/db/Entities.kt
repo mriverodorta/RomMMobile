@@ -1,5 +1,6 @@
 package com.rommmobile.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -96,6 +97,7 @@ data class DownloadEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val completedAt: Long?,
+    @ColumnInfo(defaultValue = "0") val preserveOriginalFilename: Boolean = false,
 )
 
 /** Index of files physically present in mapped folders, keyed by normalized name. */

@@ -195,6 +195,8 @@
     <string name="settings_downloads">Downloads</string>
     <string name="settings_concurrency">Parallel downloads</string>
     <string name="settings_wifi_only">Wi-Fi only</string>
+    <string name="settings_preserve_rom_filenames">Preserve original ROM filenames</string>
+    <string name="settings_preserve_rom_filenames_hint">Keep the filenames from your RomM library for new downloads.</string>
     <string name="settings_extract_zip">Unpack .zip</string>
     <string name="settings_extract_zip_hint">Extract zip archives after download</string>
     <string name="settings_extract_7z">Unpack .7z</string>

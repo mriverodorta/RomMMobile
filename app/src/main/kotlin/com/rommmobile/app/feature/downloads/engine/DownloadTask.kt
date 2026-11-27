@@ -103,7 +103,10 @@ class DownloadTask(
                     200 -> { existing = 0; hasher?.reset() }
                     416 -> {
                         // Range beyond the end: either already complete or the server changed the file.
-                        if (entity.totalBytes > 0 && existing >= entity.totalBytes) {
+                        // An older queue entry can hold only a folder name. Get a fresh response
+                        // so it can supply the original filename before publishing the file.
+                        val needsFilename = entity.preserveOriginalFilename && !entity.fileName.hasFilenameExtension()
+                        if (entity.totalBytes > 0 && existing >= entity.totalBytes && !needsFilename) {
                             return@withContext finish(entity, part, gateway, hasher)
                         }
                         part.delete(); existing = 0; hasher?.reset()
@@ -224,6 +227,7 @@ class DownloadTask(
                 return TaskOutcome.Failed("hash_mismatch", retryable = true)
             }
         }
+        if (!isDownloadFilename(entity.fileName)) return TaskOutcome.Failed("invalid_filename", retryable = false)
         val firmware = entity.kind == DownloadKind.FIRMWARE
         val relDir = if (firmware) "" else entity.targetRelDir
         if (!gateway.ensureDir(relDir)) return TaskOutcome.Failed("cannot_create_dir", retryable = false)
@@ -366,17 +370,30 @@ internal fun downloadFileNameForResponse(
     hasMd5: Boolean,
     preserveOriginal: Boolean,
 ): String {
-    if (preserveOriginal || hasMd5) return queuedName
-    return parseContentDisposition(contentDisposition) ?: queuedName
+    if (preserveOriginal && isDownloadFilename(queuedName) && queuedName.hasFilenameExtension()) return queuedName
+    if (!preserveOriginal && hasMd5) return queuedName
+    val responseName = parseContentDisposition(contentDisposition) ?: return queuedName
+    return if (!preserveOriginal || responseName.hasFilenameExtension() || !isDownloadFilename(queuedName)) {
+        responseName
+    } else queuedName
 }
+
+internal fun isDownloadFilename(name: String): Boolean =
+    name.isNotBlank() && name !in setOf(".", "..") && name.none { it == '/' || it == '\\' || it.isISOControl() }
+
+private fun String.hasFilenameExtension(): Boolean = lastIndexOf('.').let { it > 0 && it < lastIndex }
 
 private fun parseContentDisposition(header: String?): String? {
     if (header == null) return null
-    Regex("filename\\*=(?:UTF-8|utf-8)''([^;]+)").find(header)?.groupValues?.get(1)?.let {
-        return runCatching { java.net.URLDecoder.decode(it.trim(), "UTF-8") }.getOrNull()?.substringAfterLast('/')?.takeIf { n -> n.isNotBlank() }
+    Regex("""(?:^|;)\s*filename\*=\s*UTF-8'[^']*'([^;]+)""", RegexOption.IGNORE_CASE)
+        .find(header)?.groupValues?.get(1)?.let { encoded ->
+            val name = runCatching { java.net.URLDecoder.decode(encoded.trim().replace("+", "%2B"), "UTF-8") }.getOrNull()
+            if (name != null && isDownloadFilename(name)) return name
     }
-    Regex("filename=\"?([^\";]+)\"?").find(header)?.groupValues?.get(1)?.let { return it.trim().substringAfterLast('/').takeIf { n -> n.isNotBlank() } }
-    return null
+    val match = Regex("""(?:^|;)\s*filename=\s*(?:"([^"]*)"|([^;]+))""", RegexOption.IGNORE_CASE)
+        .find(header) ?: return null
+    val name = match.groups[1]?.value ?: match.groupValues[2].trim()
+    return name.takeIf(::isDownloadFilename)
 }
 
 internal fun publishFirmware(gateway: FileGateway, part: File, name: String, downloadId: Long): Boolean {

@@ -80,6 +80,7 @@ import com.rommmobile.app.data.repo.DownloadRepository
 import com.rommmobile.app.data.repo.LocalLibraryRepository
 import com.rommmobile.app.data.repo.Rom
 import com.rommmobile.app.data.repo.RomRepository
+import com.rommmobile.app.data.repo.originalSingleFileName
 import com.rommmobile.app.feature.downloads.DownloadMiniBar
 import com.rommmobile.app.feature.downloads.EnqueueController
 import com.rommmobile.app.feature.downloads.FolderDialog
@@ -95,6 +96,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.sample
@@ -105,6 +107,11 @@ sealed interface GameUiState {
     data object Loading : GameUiState
     data class Error(val error: ApiException) : GameUiState
     data class Ready(val rom: Rom) : GameUiState
+}
+
+private fun Rom.installedNameKey(keys: Set<String>): String? {
+    val originalKey = originalSingleFileName?.let { Rom.nameKeyOf(it) }
+    return originalKey?.takeIf(keys::contains) ?: nameKey.takeIf(keys::contains)
 }
 
 @HiltViewModel
@@ -125,7 +132,8 @@ class GameViewModel @Inject constructor(
 
     val present: StateFlow<Boolean> = _state.flatMapLatest { s ->
         val rom = (s as? GameUiState.Ready)?.rom
-        if (rom == null) MutableStateFlow(false) else local.presenceKeys(rom.platformSlug).map { rom.nameKey in it }
+        if (rom == null) MutableStateFlow(false)
+        else local.presenceKeys(rom.platformSlug).map { rom.installedNameKey(it) != null }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val progress: StateFlow<DownloadProgress?> = combine(downloads.observeOpenForRom(romId), downloads.progress) { open, prog ->
@@ -156,7 +164,8 @@ class GameViewModel @Inject constructor(
     /** Removes the game from this device only. The copy on RomM is never touched. */
     fun uninstall() = viewModelScope.launch {
         val rom = (state.value as? GameUiState.Ready)?.rom ?: return@launch
-        val gone = local.deleteGame(rom.platformSlug, rom.nameKey)
+        val key = rom.installedNameKey(local.presenceKeys(rom.platformSlug).first())
+        val gone = if (key != null) local.deleteGame(rom.platformSlug, key) else 0
         toaster.show(
             if (gone > 0) context.getString(R.string.uninstall_done) else context.getString(R.string.uninstall_failed),
             isError = gone == 0,
@@ -368,7 +377,7 @@ private fun InfoColumn(
         Text(stringResource(R.string.download_no_tv_folder_picker), style = MaterialTheme.typography.bodyMedium)
     }
     Spacer(Modifier.height(6.dp))
-    Text(rom.fsName, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
+    Text(rom.originalSingleFileName ?: rom.fsName, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
     if (rom.hasMultipleFiles) {
         Text(stringResource(R.string.detail_multi_file, rom.files.size), style = MaterialTheme.typography.bodySmall, color = colors.accent)
     }

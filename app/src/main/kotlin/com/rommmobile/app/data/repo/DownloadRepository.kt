@@ -14,6 +14,7 @@ import com.rommmobile.app.data.mapping.Resolution
 import com.rommmobile.app.data.prefs.SettingsStore
 import com.rommmobile.app.feature.downloads.engine.DownloadEngine
 import com.rommmobile.app.feature.downloads.engine.DownloadProgress
+import com.rommmobile.app.feature.downloads.engine.isDownloadFilename
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -43,6 +44,7 @@ class DownloadRepository @Inject constructor(
     private val serverStore: ServerStore,
     private val localLibrary: LocalLibraryRepository,
     private val platforms: PlatformRepository,
+    private val roms: RomRepository,
     private val log: FileLogger,
 ) {
     val progress: StateFlow<Map<Long, DownloadProgress>> get() = engine.progress
@@ -63,8 +65,19 @@ class DownloadRepository @Inject constructor(
             Resolution.NoRoot -> return EnqueueResult.NoRoot
             else -> return EnqueueResult.NeedsFolder(platform, res)
         }
-        val fileName = rom.downloadFileName
-        if (!force && localLibrary.isPresent(rom.platformSlug, rom.fsName)) return EnqueueResult.AlreadyPresent
+        if (dao.observeOpenForRom(rom.id).first().isNotEmpty()) return EnqueueResult.AlreadyQueued
+        val s = settings.snapshot()
+        // Library cards can omit file records. Fetch the detail before choosing a name,
+        // since fs_name may identify a directory rather than a downloadable file.
+        val sourceRom = if (s.preserveOriginalRomFilenames && !rom.hasMultipleFiles && rom.files.isEmpty()) {
+            roms.detail(rom.id).getOrNull() ?: rom
+        } else rom
+        val source = sourceRom.downloadSource(s.preserveOriginalRomFilenames)
+        val fileName = source.fileName
+        if (!force) {
+            val names = if (s.preserveOriginalRomFilenames) setOf(rom.fsName, fileName) else setOf(rom.fsName)
+            if (names.any { localLibrary.isPresent(rom.platformSlug, it) }) return EnqueueResult.AlreadyPresent
+        }
 
         dao.byRomAndName(rom.id, fileName)?.let { existing ->
             when {
@@ -74,12 +87,11 @@ class DownloadRepository @Inject constructor(
             }
         }
 
-        val s = settings.snapshot()
-        val folderPerGame = rom.hasMultipleFiles && rom.platformSlug in s.folderPerGameSlugs
+        val folderPerGame = source.generatedArchive && rom.platformSlug in s.folderPerGameSlugs
         val targetRelDir = if (folderPerGame) "$relDir/${sanitizeFolder(rom.fsNameNoExt)}" else relDir
         val ext = fileName.substringAfterLast('.', "").lowercase()
         val extract = when {
-            rom.hasMultipleFiles -> true // server-made zip with the .m3u: must be unpacked to be playable
+            source.generatedArchive -> true // server-made zip with the .m3u: must be unpacked to be playable
             // An arcade zip IS the romset: MAME/FBNeo load it as one file and unpacking breaks
             // the game. The user's per-platform override still wins over this default.
             rom.platformSlug in NEVER_EXTRACT_SLUGS -> s.extractOverrides[rom.platformSlug] ?: false
@@ -113,9 +125,9 @@ class DownloadRepository @Inject constructor(
                 attempt = 0,
                 priority = 0,
                 notBefore = 0,
-                md5 = rom.md5.takeIf { !rom.hasMultipleFiles },
-                sha1 = rom.sha1.takeIf { !rom.hasMultipleFiles },
-                crc = rom.crc.takeIf { !rom.hasMultipleFiles },
+                md5 = sourceRom.md5.takeUnless { source.generatedArchive },
+                sha1 = sourceRom.sha1.takeUnless { source.generatedArchive },
+                crc = sourceRom.crc.takeUnless { source.generatedArchive },
                 coverSmallPath = rom.coverSmall,
                 resultPath = null,
                 createdAt = now,
@@ -189,4 +201,19 @@ class DownloadRepository @Inject constructor(
 
     private fun sanitizeFolder(name: String): String =
         name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().trimEnd('.').ifEmpty { "game" }
+}
+
+internal data class RomDownloadSource(val fileName: String, val generatedArchive: Boolean)
+
+internal val Rom.originalSingleFileName: String?
+    get() = files.singleOrNull()?.fileName?.takeIf(::isDownloadFilename)
+
+internal fun Rom.downloadSource(preserveOriginal: Boolean): RomDownloadSource {
+    val generatedArchive = hasMultipleFiles || (preserveOriginal && files.size > 1)
+    val fileName = when {
+        generatedArchive -> "$fsNameNoExt.zip"
+        preserveOriginal -> originalSingleFileName ?: fsName
+        else -> downloadFileName
+    }
+    return RomDownloadSource(fileName, generatedArchive)
 }

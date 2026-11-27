@@ -79,6 +79,11 @@ class SafFileGateway(private val context: Context, override val root: StorageRoo
         return children(id).filterNot { it.name.startsWith(".") }.map { FileInfo(it.name, it.isDir, it.size, it.modified) }
     }
 
+    internal fun listSaveEntries(relDir: String): List<FileInfo>? {
+        val id = dirDocId(relDir, create = false) ?: return null
+        return children(id).map { FileInfo(it.name, it.isDir, it.size, it.modified) }
+    }
+
     internal fun saveDirectoryObserverUri(relDir: String): Uri? =
         dirDocId(relDir, create = false)?.let { DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, it) }
 

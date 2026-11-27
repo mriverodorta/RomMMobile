@@ -9,6 +9,7 @@ import android.os.storage.StorageManager
 import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import com.rommmobile.app.BuildConfig
 import java.io.File
 
 data class RootCandidate(
@@ -21,6 +22,8 @@ data class RootCandidate(
 
 /** Finds where a launcher is likely to keep its ROM tree, on internal memory and SD cards. */
 object StorageLocations {
+
+    internal const val DOLPHIN_DOCUMENTS = "org.dolphinemu.dolphinemu.user"
 
     private val COMMON_NAMES = listOf("ROMs", "Roms", "roms", "ROM", "Games", "Emulation/roms")
 
@@ -67,13 +70,15 @@ object StorageLocations {
         return out.sortedWith(compareByDescending<RootCandidate> { it.exists }.thenByDescending { it.subfolderCount }.thenBy { it.isRemovable })
     }
 
-    fun hasAllFilesAccess(context: Context): Boolean =
-        if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
+    fun hasAllFilesAccess(context: Context): Boolean {
+        if (!BuildConfig.ALL_FILES_ACCESS_AVAILABLE) return false
+        return if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
         else ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
 
     /** Intent to the "All files access" screen for this app, or the generic list when unsupported. */
     fun allFilesAccessIntent(context: Context): Intent? {
-        if (Build.VERSION.SDK_INT < 30) return null
+        if (!BuildConfig.ALL_FILES_ACCESS_AVAILABLE || Build.VERSION.SDK_INT < 30) return null
         val specific = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${context.packageName}"))
         if (specific.resolveActivity(context.packageManager) != null) return specific
         val generic = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
@@ -85,7 +90,8 @@ object StorageLocations {
     }
 
     /** Android TV / Fire TV frequently ship without any SAF picker at all. */
-    fun canOpenTree(context: Context): Boolean = openTreeIntent().resolveActivity(context.packageManager) != null
+    fun canOpenTree(context: Context): Boolean = openTreeIntent().resolveActivity(context.packageManager)
+        ?.let { it.packageName != "com.android.tv.frameworkpackagestubs" } == true
 
     /** Physical path used to match ES-DE settings to a granted local tree. */
     fun treeUriToPath(uri: Uri): String? = runCatching {
@@ -97,12 +103,24 @@ object StorageLocations {
         if (rel.isEmpty()) base else "$base/$rel"
     }.getOrNull()
 
+    internal fun saveTreePath(uri: Uri): String? = when (uri.authority) {
+        "com.android.externalstorage.documents" -> treeUriToPath(uri)
+        DOLPHIN_DOCUMENTS -> runCatching {
+            val directory = DocumentsContract.getTreeDocumentId(uri)
+            if (directory !in setOf("root/GC", "root/StateSaves", "root/Wii/title/00010000")) {
+                return@runCatching null
+            }
+            File(Environment.getExternalStorageDirectory(),
+                "Android/data/org.dolphinemu.dolphinemu/files/" + directory.removePrefix("root/")).path
+        }.getOrNull()
+        else -> null
+    }
+
     internal fun treeCovering(context: Context, path: String, writable: Boolean): Pair<StorageRoot.Saf, String>? =
         context.contentResolver.persistedUriPermissions.asSequence()
             .filter { it.isReadPermission && (!writable || it.isWritePermission) }
-            .filter { it.uri.authority == "com.android.externalstorage.documents" }
             .mapNotNull { grant ->
-                val base = treeUriToPath(grant.uri)?.trimEnd('/') ?: return@mapNotNull null
+                val base = saveTreePath(grant.uri)?.trimEnd('/') ?: return@mapNotNull null
                 val relative = when {
                     path == base -> ""
                     path.startsWith("$base/") -> path.removePrefix("$base/")
@@ -112,9 +130,8 @@ object StorageLocations {
                 StorageRoot.Saf(grant.uri.toString()) to relative
             }.minByOrNull { it.second.length }
 
-    fun persistTree(context: Context, uri: Uri) {
+    fun persistTree(context: Context, uri: Uri): Boolean =
         runCatching {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }
-    }
+        }.isSuccess
 }

@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="save_sync_choose_emulator_folder">Scegli la cartella RetroArch</string>
-    <string name="save_sync_choose_emulator_folder_hint">Autorizza la cartella condivisa di RetroArch per i salvataggi e gli stati.</string>
+    <string name="standalone_save_game_id">ID del gioco per i salvataggi standalone</string>
+    <string name="standalone_save_game_id_label">ID del gioco</string>
+    <string name="standalone_save_game_id_hint">Usa l’ID di questa ROM mostrato dall’emulatore. Lascia il campo vuoto per leggere automaticamente l’ID dai formati supportati.</string>
+    <string name="standalone_save_game_id_apply">Salva ID del gioco</string>
+    <string name="standalone_save_folder_hint">Scegli le cartelle attive di salvataggi e stati nella memoria condivisa. Gli stati standalone si sincronizzano tra versioni identiche dell’emulatore.</string>
+    <string name="standalone_use_detected_saves">Usa la cartella dei salvataggi rilevata</string>
+    <string name="standalone_use_detected_states">Usa la cartella degli stati rilevata</string>
+    <string name="standalone_save_folder_unselected">Scegli una cartella per iniziare a sincronizzare questo emulatore.</string>
+    <string name="save_sync_exclude_retroarch">Escludi RetroArch</string>
+    <string name="save_sync_exclude_retroarch_hint">Usa RetroArch Cloud Sync per RetroArch e RomMMobileS per gli altri emulatori supportati.</string>
+    <string name="save_sync_choose_emulator_folder">Scegli la cartella dell’emulatore</string>
+    <string name="save_sync_choose_emulator_folder_hint">Autorizza una cartella condivisa che contiene salvataggi o stati.</string>
     <string name="save_sync_broad_storage">Accesso a tutti i file (facoltativo)</string>
     <string name="app_name">RomMMobileS</string>
 
@@ -52,6 +62,7 @@
     <string name="error_offline">Server non raggiungibile. Controlla la connessione e l’indirizzo.</string>
     <string name="error_tls">Connessione sicura fallita. Il certificato non è considerato attendibile da questo dispositivo.</string>
     <string name="error_cleartext_blocked">HTTP in chiaro verso internet è bloccato. Usa HTTPS oppure consentilo in Impostazioni → Avanzate.</string>
+    <string name="error_https_required">Usa un indirizzo HTTPS. Un proxy inverso HTTPS può collegarsi a un server RomM che usa HTTP.</string>
     <string name="error_server">Errore del server %1$d. %2$s</string>
     <string name="error_parse">Dati inattesi dal server. Aggiorna RomM o segnala il problema allegando il log.</string>
     <string name="error_cancelled">Annullato.</string>
@@ -87,6 +98,7 @@
     <string name="toast_enqueued">→ %s</string>
     <string name="toast_already_queued">Già in coda</string>
     <string name="toast_no_root">Nessuna cartella ROM scelta. Impostala nelle Impostazioni.</string>
+    <string name="download_no_tv_folder_picker">I download non sono disponibili perché questa TV non ha un selettore di cartelle di sistema. Puoi ancora consultare la libreria RomM e usare RetroArch Cloud Sync.</string>
     <string name="toast_folder_create_failed">Impossibile creare la cartella</string>
 
     <string name="detail_multi_file">Gioco multi-file (%d file): scaricato come archivio e scompattato in una cartella dedicata.</string>
@@ -170,6 +182,8 @@
     <string name="settings_bios">BIOS / firmware</string>
     <string name="settings_bios_default">RetroArch/system accanto alla cartella ROM</string>
     <string name="settings_bios_path">Cartella BIOS</string>
+    <string name="settings_privacy_policy">Informativa sulla privacy</string>
+    <string name="error_no_browser">Installa un browser per aprire l’informativa sulla privacy.</string>
     <string name="settings_downloads">Download</string>
     <string name="settings_concurrency">Download in parallelo</string>
     <string name="settings_wifi_only">Solo Wi-Fi</string>
@@ -190,6 +204,18 @@
     <string name="settings_advanced">Avanzate</string>
     <string name="settings_save_sync">Sincronizzazione salvataggi e stati</string>
     <string name="settings_save_sync_hint">Sincronizzazione in background, cartelle e ripristino</string>
+    <string name="save_sync_method">Metodo di sincronizzazione</string>
+    <string name="save_sync_method_rommmobiles">Sincronizzazione RomMMobileS in background</string>
+    <string name="save_sync_method_retroarch">Sincronizzazione cloud di RetroArch</string>
+    <string name="save_sync_method_off">Disattivata</string>
+    <string name="save_sync_use_one_method">Disattiva la sincronizzazione cloud in RetroArch quando RomMMobileS gestisce i salvataggi su questo dispositivo.</string>
+    <string name="save_sync_retroarch_copy">Copia indirizzo WebDAV</string>
+    <string name="save_sync_retroarch_copied">Indirizzo WebDAV copiato</string>
+    <string name="save_sync_retroarch_open">Apri RetroArch</string>
+    <string name="save_sync_retroarch_unavailable">RetroArch non è installato oppure non si apre.</string>
+    <string name="save_sync_retroarch_steps">In questa modalità RetroArch gestisce salvataggi e stati. Usa RomM 5.4 o successivo e RetroArch 1.22 o successivo con supporto WebDAV.\n\nIn RetroArch, apri Impostazioni → Salvataggio → Sincronizzazione cloud. Scegli WebDAV e inserisci l’indirizzo qui sopra, il nome utente e la password RomM. Attiva la sincronizzazione dei salvataggi in modalità automatica. Disattiva la sincronizzazione distruttiva e quella delle configurazioni.\n\nUsa gli stessi nomi dei file ROM e raggruppa salvataggi e stati per core. Lascia disattivata l’opzione per salvare accanto alle ROM. Apri RetroArch e aspetta che la sincronizzazione finisca prima di caricare un gioco.</string>
+    <string name="ob_storage_tv_cloud_sync">Questa TV non ha un selettore di cartelle. Puoi esplorare RomM e configurare la sincronizzazione cloud di RetroArch senza una cartella ROM. Per scaricare occorre una cartella ROM scrivibile.</string>
+    <string name="ob_storage_tv_skip">Continua senza cartella ROM</string>
     <string name="save_sync_emulator_details">Avvii rilevati</string>
     <string name="settings_diagnostics">Diagnostica</string>
     <string name="settings_diagnostics_hint">Stato, ultimi download, log esportabile</string>
@@ -221,15 +247,16 @@
     <string name="save_sync_missing_scopes">RomM ha negato l’accesso ai salvataggi. Accedi di nuovo o controlla i permessi del token.</string>
     <string name="save_sync_title">Sincronizzazione salvataggi RomM</string>
     <string name="save_sync_enable">Sincronizzazione in background</string>
-    <string name="save_sync_description">Controlla le cartelle RetroArch verificate e carica i salvataggi e gli stati per le ROM corrispondenti.</string>
+    <string name="save_sync_description">RomMMobileS invia al tuo server RomM i salvataggi selezionati, le informazioni sui giochi e un identificativo del dispositivo. La sincronizzazione continua anche quando esci dall’app.</string>
+    <string name="save_sync_usage_needed">RomMMobileS verifica l’attività degli emulatori sul dispositivo prima di ripristinare i salvataggi. In RetroArch, attiva il salvataggio automatico dello stato.</string>
     <string name="save_sync_watching">Controllo delle cartelle dei salvataggi…</string>
     <string name="save_sync_paused">Servizio fermo. Tocca per riprendere.</string>
     <string name="save_sync_no_folders">Nessuna cartella verificata dalla configurazione RetroArch. Controlla il rilevamento ES-DE.</string>
     <string name="save_sync_now">Sincronizza ora</string>
     <string name="save_sync_apply">Applica salvataggi e stati scaricati</string>
-    <string name="save_sync_apply_hint">Chiudi RetroArch prima di applicare i file in arrivo.</string>
-    <string name="save_sync_apply_warning">Chiudi completamente RetroArch. Prima di applicare gli stati, verifica che entrambi i dispositivi usino versioni compatibili dei core. RomMMobileS conserva una copia dei file sostituiti.</string>
-    <string name="save_sync_apply_confirm">RetroArch è chiuso</string>
+    <string name="save_sync_apply_hint">Chiudi gli emulatori prima di applicare i file in arrivo.</string>
+    <string name="save_sync_apply_warning">Chiudi completamente tutti gli emulatori. Per gli stati, usa core RetroArch compatibili e versioni identiche degli emulatori standalone. RomMMobileS conserva una copia prima di sostituire un salvataggio.</string>
+    <string name="save_sync_apply_confirm">Gli emulatori sono chiusi</string>
     <string name="save_sync_battery">Ottimizzazione batteria</string>
     <string name="save_sync_battery_exempt">Android indica che RomMMobileS è esente dall’ottimizzazione della batteria.</string>
     <string name="save_sync_battery_hint">Apri Informazioni app. Seleziona Batteria, poi Senza restrizioni se disponibile.</string>
@@ -255,7 +282,7 @@
     <string name="bios_empty">Nessun firmware sul server</string>
     <string name="bios_empty_hint">Aggiungi i file BIOS alla libreria RomM per vederli qui.</string>
     <string name="bios_already_present">Già presente nella cartella BIOS</string>
-    <string name="bios_needs_direct">Per i BIOS servono l’accesso a tutti i file e una cartella ROM con percorso normale</string>
+    <string name="bios_choose_folder">Scegli la cartella BIOS dell’emulatore nelle impostazioni.</string>
 
     <string name="ob_step_n">Passo %1$d di %2$d</string>
     <string name="ob_step_server">Server</string>
@@ -297,6 +324,7 @@
     <string name="btn_left">Sinistra</string>
     <string name="btn_right">Destra</string>
     <string name="ob_server_body">Indirizzo del tuo server RomM. In casa di solito è un IP e una porta; va bene anche un dominio.</string>
+    <string name="ob_server_https_body">Inserisci l’indirizzo HTTPS del tuo server RomM.</string>
     <string name="ob_server_advanced">Avanzate: Cloudflare Access, HTTP in chiaro</string>
     <string name="ob_server_label">Indirizzo</string>
     <string name="ob_server_idle">Scrivi l’indirizzo per provarlo</string>
@@ -333,13 +361,14 @@
     <string name="ob_summary_body">%1$d piattaforme su %2$d hanno già una cartella. Le altre vengono create al primo download; tocca una riga per cambiarla.</string>
 
     <string name="root_title">Cartella ROM</string>
-    <string name="root_allfiles_body">Usa il selettore per autorizzare singole cartelle. L’accesso a tutti i file è facoltativo e permette di rilevare direttamente le modifiche.</string>
-    <string name="root_allfiles_grant">Concedi accesso a tutti i file</string>
+    <string name="root_allfiles_body">Consenti l’accesso a tutti i file per usare il percorso di una cartella su questo dispositivo.</string>
+    <string name="root_allfiles_grant">Apri le impostazioni di accesso a tutti i file</string>
     <string name="root_allfiles_unavailable">Questo dispositivo non espone la schermata di accesso a tutti i file.</string>
     <string name="root_pick_saf">Scegli cartella</string>
     <string name="root_no_picker">Questo dispositivo non ha un selettore cartelle: scrivi il percorso qui sotto.</string>
     <string name="root_manual_empty">Scrivi un percorso</string>
     <string name="root_manual_invalid">Percorso non trovato e impossibile da creare</string>
+    <string name="root_picker_required">Il selettore di cartelle Android non è disponibile su questo dispositivo.</string>
 
     <plurals name="n_files">
         <item quantity="one">%d file</item>
@@ -358,7 +387,8 @@
     <string name="per_platform_default">Predefinito</string>
     <string name="per_platform_extract">Estrai</string>
     <string name="per_platform_keep">Lascia archivio</string>
-    <string name="auth_device_desc">Punta il telefono sul codice qui sotto e approva da lì. Qui non devi scrivere niente.</string>
+    <string name="auth_device_desc">RomMMobileS invia il modello e l’identificativo del dispositivo al tuo server RomM per richiedere un codice di abbinamento. Inquadra il codice con il telefono e approva la connessione.</string>
+    <string name="auth_device_request">Genera codice di abbinamento</string>
     <string name="auth_password_desc">Nome utente e password di RomM. Scriverli su un handheld è lento.</string>
     <string name="auth_token_desc">Incolla un Client API token creato nella web app di RomM, se ne hai già uno.</string>
     <string name="root_pick_body">Scegli la cartella che il tuo frontend scansiona, per esempio ROMs nella memoria interna o sulla SD.</string>

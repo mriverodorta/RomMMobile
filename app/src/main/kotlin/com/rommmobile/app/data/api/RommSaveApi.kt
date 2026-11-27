@@ -26,16 +26,34 @@ interface RommSaveApi {
     suspend fun upload(
         @Query("rom_id") romId: Int,
         @Query("device_id") deviceId: String,
-        @Query("session_id") sessionId: Int,
-        @Query("slot") slot: String,
+        @Query("session_id") sessionId: Int?,
+        @Query("slot") slot: String?,
         @Query("emulator") emulator: String,
         @Query("content_hash") hash: String,
         @Part save: MultipartBody.Part,
         @Query("overwrite") overwrite: Boolean = false,
-    ): JsonElement
+    ): SaveSyncDetails
 
     @GET("api/saves")
     suspend fun history(@Query("rom_id") romId: Int): List<SaveSyncDetails>
+
+    @GET("api/saves")
+    suspend fun saveVersions(@Query("rom_ids") romIds: List<Int>): List<SaveSyncDetails>
+
+    @GET("api/states")
+    suspend fun stateVersions(@Query("rom_ids") romIds: List<Int>): List<SaveSyncDetails>
+
+    @Multipart
+    @POST("api/states")
+    suspend fun uploadState(
+        @Query("rom_id") romId: Int,
+        @Query("emulator") emulator: String,
+        @Part state: MultipartBody.Part,
+    ): SaveSyncDetails
+
+    @Streaming
+    @GET("api/states/{id}/content")
+    suspend fun downloadState(@Path("id") stateId: Int): ResponseBody
 
     @Streaming
     @GET("api/saves/{id}/content")
@@ -124,4 +142,7 @@ data class SaveSyncDetails(
     @SerialName("updated_at") val updatedAt: String? = null,
     val slot: String? = null,
     val emulator: String? = null,
+    @SerialName("rom_id") val romId: Int? = null,
+    @SerialName("file_name") val fileName: String = "",
+    @SerialName("missing_from_fs") val missing: Boolean = false,
 )

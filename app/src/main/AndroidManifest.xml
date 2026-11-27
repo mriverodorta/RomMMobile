@@ -26,13 +26,18 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
-    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="${leanbackRequired}" />
 
     <queries>
         <package android:name="org.es_de.frontend" />
         <package android:name="com.retroarch" />
         <package android:name="com.retroarch.aarch64" />
         <package android:name="com.retroarch.ra32" />
+        <package android:name="com.github.stenzek.duckstation" />
+        <package android:name="org.dolphinemu.dolphinemu" />
+        <package android:name="io.github.lime3ds.android" />
+        <package android:name="org.ppsspp.ppsspp" />
+        <package android:name="org.ppsspp.ppssppgold" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

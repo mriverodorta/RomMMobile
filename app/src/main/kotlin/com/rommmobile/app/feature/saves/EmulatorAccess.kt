@@ -106,21 +106,35 @@ class EmulatorAccessViewModel @Inject constructor(
         }
     }
 
+    fun useDetectedFolder(key: String, state: Boolean, path: String, root: StorageRoot?) =
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { sync.selectEmulatorFolder(key, state, path) }
+            updateSelection(saved, root)
+        }
+
+    private suspend fun updateSelection(saved: Boolean, root: StorageRoot?) {
+        _saveFolderError.value = !saved
+        if (saved) {
+            refresh(root)
+            if (sync.enabled.first()) sync.syncNow()
+        }
+    }
+
     fun chooseSaveFolder(key: String, state: Boolean, uri: Uri, root: StorageRoot?) =
         viewModelScope.launch {
             val saved = withContext(Dispatchers.IO) {
-                val path = uri.takeIf { it.authority == "com.android.externalstorage.documents" }
-                    ?.let(StorageLocations::treeUriToPath)
-                path != null && runCatching {
-                    StorageLocations.persistTree(context, uri)
-                    detector.selectSharedFolder(key, state, path)
-                }.getOrDefault(false)
+                val path = StorageLocations.saveTreePath(uri)
+                val dolphinFolder = when (key) {
+                    "org.dolphinemu.dolphinemu\ndolphin-gc" -> if (state) "StateSaves" else "GC"
+                    "org.dolphinemu.dolphinemu\ndolphin-wii" -> if (state) "StateSaves" else "00010000"
+                    else -> null
+                }
+                path != null &&
+                    (uri.authority != StorageLocations.DOLPHIN_DOCUMENTS || path.substringAfterLast('/') == dolphinFolder) &&
+                    StorageLocations.persistTree(context, uri) &&
+                    sync.selectEmulatorFolder(key, state, path)
             }
-            _saveFolderError.value = !saved
-            if (saved) {
-                refresh(root)
-                if (sync.enabled.first()) sync.syncNow()
-            }
+            updateSelection(saved, root)
         }
 }
 
@@ -129,6 +143,7 @@ fun EmulatorAccess(
     root: StorageRoot? = null,
     prompt: Boolean = false,
     showEsdeSettings: Boolean = false,
+    excludeRetroArch: Boolean = false,
 ) {
     val vm: EmulatorAccessViewModel = hiltViewModel()
     if (prompt) {
@@ -180,13 +195,23 @@ fun EmulatorAccess(
             modifier = Modifier.padding(horizontal = 14.dp), color = MaterialTheme.colorScheme.error)
     }
     val detected = detection ?: return
-    val profiles = detected.launches.filter { it.folderSelectionKey != null }.distinctBy { it.folderSelectionKey }
+    val profiles = detected.launches
+        .filter { it.folderSelectionKey != null && !(excludeRetroArch && it.isRetroArch) }
+        .distinctBy { it.folderSelectionKey }
     val choose: (EsdeLaunch, Boolean) -> Unit = { launch, state ->
         pickingKey = launch.folderSelectionKey
         pickingState = state
         savePicker.launch(null)
     }
     var editingKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val useDetected: (EsdeLaunch, Boolean) -> Unit = { launch, state ->
+        val path = if (state) launch.states else launch.saves
+        val key = launch.folderSelectionKey
+        if (path != null && key != null) {
+            editingKey = key
+            vm.useDetectedFolder(key, state, path, root)
+        }
+    }
     val promptProfiles = profiles.filter { !it.saveFoldersVerified || it.folderSelectionKey == editingKey }
     val dismiss = { vm.dismissPrompt(); Unit }
 
@@ -197,7 +222,7 @@ fun EmulatorAccess(
             title = { Text(stringResource(R.string.emulator_access_title)) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    EmulatorFolders(promptProfiles, saveFolderError) { launch, state ->
+                    EmulatorFolders(promptProfiles, saveFolderError, useDetected) { launch, state ->
                         editingKey = launch.folderSelectionKey
                         choose(launch, state)
                     }
@@ -227,7 +252,7 @@ fun EmulatorAccess(
                 Text(stringResource(R.string.diag_esde_folder))
             }
         } else if (profiles.isNotEmpty()) {
-            EmulatorFolders(profiles, saveFolderError, choose)
+            EmulatorFolders(profiles, saveFolderError, useDetected, choose)
         } else {
             Text(stringResource(R.string.emulator_access_no_folders))
         }
@@ -259,6 +284,7 @@ fun EmulatorAccess(
 private fun EmulatorFolders(
     launches: List<EsdeLaunch>,
     error: Boolean,
+    useDetected: (EsdeLaunch, Boolean) -> Unit,
     choose: (EsdeLaunch, Boolean) -> Unit,
 ) {
     Text(stringResource(R.string.emulator_access_choose_body))
@@ -266,8 +292,26 @@ private fun EmulatorFolders(
     for (launch in launches) {
         Column(Modifier.padding(top = RommTheme.layout.padding)) {
             Text(launch.label, style = MaterialTheme.typography.titleSmall)
+            if (launch.standalone != null) {
+                Text(stringResource(R.string.standalone_save_folder_hint))
+                if (!launch.saveFoldersVerified) Text(stringResource(R.string.standalone_save_folder_unselected))
+            }
             launch.saves?.let { Text(stringResource(if (launch.savesAutoDetected) R.string.emulator_access_default_saves else R.string.diag_esde_saves, it)) }
             launch.states?.let { Text(stringResource(if (launch.statesAutoDetected) R.string.emulator_access_default_states else R.string.diag_esde_states, it)) }
+            if (launch.standalone != null && (launch.savesAutoDetected || launch.statesAutoDetected)) {
+                Row {
+                    if (launch.savesAutoDetected) {
+                        TextButton(onClick = { useDetected(launch, false) }, modifier = Modifier.gamepadFocusRing(PillShape)) {
+                            Text(stringResource(R.string.standalone_use_detected_saves))
+                        }
+                    }
+                    if (launch.statesAutoDetected) {
+                        TextButton(onClick = { useDetected(launch, true) }, modifier = Modifier.gamepadFocusRing(PillShape)) {
+                            Text(stringResource(R.string.standalone_use_detected_states))
+                        }
+                    }
+                }
+            }
             Row {
                 TextButton(onClick = { choose(launch, false) }, modifier = Modifier.gamepadFocusRing(PillShape)) {
                     Text(stringResource(R.string.emulator_access_choose_saves))

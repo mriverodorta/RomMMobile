@@ -23,11 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +70,7 @@ import com.rommmobile.app.core.design.Skeleton
 import com.rommmobile.app.core.design.StatusPill
 import com.rommmobile.app.core.design.Toaster
 import com.rommmobile.app.core.design.gamepadFocusRing
+import com.rommmobile.app.core.esde.StandaloneEmulator
 import com.rommmobile.app.core.input.GamepadAction
 import com.rommmobile.app.core.input.rightStickScroll
 import com.rommmobile.app.core.network.ApiException
@@ -82,6 +86,7 @@ import com.rommmobile.app.feature.downloads.FolderDialog
 import com.rommmobile.app.feature.downloads.RedownloadDialog
 import com.rommmobile.app.feature.downloads.engine.DownloadProgress
 import com.rommmobile.app.feature.main.GameRoute
+import com.rommmobile.app.feature.saves.SaveSyncControl
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -111,6 +116,7 @@ class GameViewModel @Inject constructor(
     private val toaster: Toaster,
     downloads: DownloadRepository,
     val enqueue: EnqueueController,
+    private val saveSync: SaveSyncControl,
 ) : ViewModel() {
     private val romId = handle.toRoute<GameRoute>().id
 
@@ -140,6 +146,13 @@ class GameViewModel @Inject constructor(
         (state.value as? GameUiState.Ready)?.rom?.let { enqueue.enqueue(it, force) }
     }
 
+    internal fun standaloneId(profile: StandaloneEmulator, hash: String): String? =
+        saveSync.gameIdOverride(profile.id, hash)
+
+    internal fun setStandaloneId(profile: StandaloneEmulator, hash: String, id: String?) = viewModelScope.launch {
+        saveSync.setGameIdOverride(profile.id, hash, id)
+    }
+
     /** Removes the game from this device only. The copy on RomM is never touched. */
     fun uninstall() = viewModelScope.launch {
         val rom = (state.value as? GameUiState.Ready)?.rom ?: return@launch
@@ -158,6 +171,9 @@ fun GameDetailScreen(romId: Int, onBack: () -> Unit, onOpenGame: (Int) -> Unit, 
     val state by vm.state.collectAsStateWithLifecycle()
     val present by vm.present.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
+    val downloadUnavailable by vm.enqueue.tvDownloadsUnavailable.collectAsStateWithLifecycle(
+        initialValue = vm.enqueue.noTvFolderPicker,
+    )
     val pending by vm.enqueue.pending.collectAsStateWithLifecycle()
     val redownload by vm.enqueue.confirmRedownload.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -174,11 +190,13 @@ fun GameDetailScreen(romId: Int, onBack: () -> Unit, onOpenGame: (Int) -> Unit, 
                     rom = s.rom,
                     present = present,
                     progress = progress,
+                    downloadUnavailable = downloadUnavailable,
                     horizontal = layout.isShort || layout.widthDp >= 600,
                     onDownload = { vm.download() },
                     onDownloadAgain = { vm.download(force = true) },
                     onUninstall = { confirmUninstall = s.rom },
                     onOpenGame = onOpenGame,
+                    standaloneSettings = { if (present) StandaloneGameIdSetting(s.rom, vm) },
                 )
             }
         }
@@ -224,11 +242,13 @@ private fun DetailBody(
     rom: Rom,
     present: Boolean,
     progress: DownloadProgress?,
+    downloadUnavailable: Boolean,
     horizontal: Boolean,
     onDownload: () -> Unit,
     onDownloadAgain: () -> Unit,
     onUninstall: () -> Unit,
     onOpenGame: (Int) -> Unit,
+    standaloneSettings: @Composable () -> Unit,
 ) {
     val layout = RommTheme.layout
     val scroll = rememberScrollState()
@@ -239,7 +259,7 @@ private fun DetailBody(
         }
     }
     val info: @Composable () -> Unit = {
-        InfoColumn(rom, present, progress, onDownload, onDownloadAgain, onUninstall, onOpenGame)
+        InfoColumn(rom, present, progress, downloadUnavailable, onDownload, onDownloadAgain, onUninstall, onOpenGame, standaloneSettings)
     }
     if (horizontal) {
         Row(Modifier.fillMaxSize().padding(layout.padding)) {
@@ -261,10 +281,12 @@ private fun InfoColumn(
     rom: Rom,
     present: Boolean,
     progress: DownloadProgress?,
+    downloadUnavailable: Boolean,
     onDownload: () -> Unit,
     onDownloadAgain: () -> Unit,
     onUninstall: () -> Unit,
     onOpenGame: (Int) -> Unit,
+    standaloneSettings: @Composable () -> Unit,
 ) {
     val colors = RommTheme.colors
     val downloadFr = remember { FocusRequester() }
@@ -276,7 +298,8 @@ private fun InfoColumn(
     // keep asking for a few frames and stop as soon as the button itself says it has focus. Landing
     // here with the pad puts the action under the cursor; landing here with a finger does not, and
     // should not.
-    LaunchedEffect(rom.id) {
+    LaunchedEffect(rom.id, downloadUnavailable) {
+        if (downloadUnavailable && !present) return@LaunchedEffect
         repeat(10) {
             if (actionFocused) return@LaunchedEffect
             runCatching { downloadFr.requestFocus() }
@@ -328,22 +351,29 @@ private fun InfoColumn(
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.action_uninstall))
                 }
-                TextButton(onClick = onDownloadAgain, modifier = Modifier.gamepadFocusRing(PillShape)) {
-                    Text(stringResource(R.string.action_download_again))
+                if (!downloadUnavailable) {
+                    TextButton(onClick = onDownloadAgain, modifier = Modifier.gamepadFocusRing(PillShape)) {
+                        Text(stringResource(R.string.action_download_again))
+                    }
                 }
             }
-            else -> Button(onClick = onDownload, modifier = Modifier.focusRequester(downloadFr).onFocusChanged { actionFocused = it.isFocused }.gamepadFocusRing(PillShape)) {
+            !downloadUnavailable -> Button(onClick = onDownload, modifier = Modifier.focusRequester(downloadFr).onFocusChanged { actionFocused = it.isFocused }.gamepadFocusRing(PillShape)) {
                 Icon(Icons.Rounded.Download, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.action_download))
             }
         }
     }
+    if (downloadUnavailable) {
+        Text(stringResource(R.string.download_no_tv_folder_picker), style = MaterialTheme.typography.bodyMedium)
+    }
     Spacer(Modifier.height(6.dp))
     Text(rom.fsName, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
     if (rom.hasMultipleFiles) {
         Text(stringResource(R.string.detail_multi_file, rom.files.size), style = MaterialTheme.typography.bodySmall, color = colors.accent)
     }
+
+    standaloneSettings()
 
     if (!rom.summary.isNullOrBlank()) {
         Spacer(Modifier.height(12.dp))
@@ -381,6 +411,51 @@ private fun InfoColumn(
         if (rom.files.size > 40) Text("…", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted, modifier = Modifier.padding(horizontal = 6.dp))
     }
     Spacer(Modifier.height(24.dp))
+}
+
+@Composable
+private fun StandaloneGameIdSetting(rom: Rom, vm: GameViewModel) {
+    val profile = StandaloneEmulator.forPlatform(rom.platformSlug) ?: return
+    val hash = rom.sha1 ?: return
+    var open by rememberSaveable(rom.id) { mutableStateOf(false) }
+    var input by rememberSaveable(rom.id) { mutableStateOf("") }
+    TextButton(
+        onClick = {
+            input = vm.standaloneId(profile, hash).orEmpty()
+            open = true
+        },
+        modifier = Modifier.gamepadFocusRing(PillShape),
+    ) { Text(stringResource(R.string.standalone_save_game_id)) }
+    if (!open) return
+    val valid = profile.normalizeGameId(input)
+    AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text(stringResource(R.string.standalone_save_game_id)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.standalone_save_game_id_hint))
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it.take(32) },
+                    label = { Text(stringResource(R.string.standalone_save_game_id_label)) },
+                    singleLine = true,
+                    isError = input.isNotBlank() && valid == null,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = input.isBlank() || valid != null,
+                onClick = {
+                    vm.setStandaloneId(profile, hash, valid)
+                    open = false
+                },
+            ) { Text(stringResource(R.string.standalone_save_game_id_apply)) }
+        },
+        dismissButton = {
+            TextButton(onClick = { open = false }) { Text(stringResource(R.string.action_cancel)) }
+        },
+    )
 }
 
 @Composable

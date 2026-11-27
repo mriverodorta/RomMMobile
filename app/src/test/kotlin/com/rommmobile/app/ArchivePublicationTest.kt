@@ -1,8 +1,10 @@
 package com.rommmobile.app
 
 import com.rommmobile.app.core.storage.DirectFileGateway
+import com.rommmobile.app.core.storage.FileGateway
 import com.rommmobile.app.core.storage.StorageRoot
 import com.rommmobile.app.feature.downloads.engine.Extractor
+import com.rommmobile.app.feature.downloads.engine.publishFirmware
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,5 +41,34 @@ class ArchivePublicationTest {
         assertEquals("existing", existing.readText())
         assertFalse(roms.resolve("snes/first.sfc").exists())
         assertFalse(roms.resolve("snes/.stage").exists())
+    }
+
+    @Test
+    fun `verified firmware reaches the selected folder`() {
+        val folder = temporary.newFolder("system")
+        val part = temporary.newFile("download.part").apply { writeText("new firmware") }
+        val gateway = DirectFileGateway(StorageRoot.Direct(folder.absolutePath))
+
+        assertTrue(publishFirmware(gateway, part, "bios.bin", 1))
+        assertEquals("new firmware", folder.resolve("bios.bin").readText())
+        assertFalse(folder.resolve(".romm-firmware-1.tmp").exists())
+        assertFalse(part.exists())
+    }
+
+    @Test
+    fun `firmware appearing during publication is preserved`() {
+        val folder = temporary.newFolder("system")
+        val part = temporary.newFile("download.part").apply { writeText("incoming") }
+        val direct = DirectFileGateway(StorageRoot.Direct(folder.absolutePath))
+        val gateway = object : FileGateway by direct {
+            override fun moveWithin(fromRelDir: String, name: String, toRelDir: String): Boolean {
+                folder.resolve(name).writeText("existing")
+                return direct.moveWithin(fromRelDir, name, toRelDir)
+            }
+        }
+
+        assertTrue(publishFirmware(gateway, part, "bios.bin", 1))
+        assertEquals("existing", folder.resolve("bios.bin").readText())
+        assertFalse(folder.resolve(".romm-firmware-1.tmp").exists())
     }
 }

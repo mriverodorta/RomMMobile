@@ -8,7 +8,8 @@ class UrlNormalizerTest {
 
     @Test
     fun `adds scheme and strips trailing slash`() {
-        assertThat(UrlNormalizer.normalize("192.168.50.11:8080/")).isEqualTo("http://192.168.50.11:8080")
+        val defaultScheme = if (BuildConfig.DIRECT_HTTP_AVAILABLE) "http" else "https"
+        assertThat(UrlNormalizer.normalize("192.168.50.11:8080/")).isEqualTo("$defaultScheme://192.168.50.11:8080")
         assertThat(UrlNormalizer.normalize("  https://romm.example.com/  ")).isEqualTo("https://romm.example.com")
     }
 

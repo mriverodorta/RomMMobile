@@ -40,7 +40,10 @@ data class EsdeLaunch(
     val statesAutoDetected: Boolean = false,
     val romExtensions: Set<String> = emptySet(),
     val runtimeLogRoot: String? = null,
-)
+) {
+    val isRetroArch: Boolean get() = packageName?.startsWith("com.retroarch") == true
+    internal val standalone: StandaloneEmulator? get() = StandaloneEmulator.detect(packageName, system)
+}
 
 class EsdeDetector @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -151,6 +154,10 @@ class EsdeDetector @Inject constructor(
             ?.substringBefore('/')?.takeUnless { '%' in it }
         val packageName = explicitPackage ?: candidates.firstOrNull(::installed)
         val core = corePattern.find(text)?.groupValues?.get(1)
+        val standalone = StandaloneEmulator.detect(packageName, system)
+        if (standalone != null && packageName != null && installed(packageName)) {
+            return standaloneLaunch(system, game, label, packageName, standalone)
+        }
         if (packageName == null || !packageName.startsWith("com.retroarch") || core == null) {
             return EsdeLaunch(system, game, label, packageName, core, null, null)
         }
@@ -187,6 +194,44 @@ class EsdeDetector @Inject constructor(
             savesAutoDetected = chosenSaves == null && cfg == null && saves != null,
             statesAutoDetected = chosenStates == null && cfg == null && states != null,
             runtimeLogRoot = runtimeLogRoot)
+    }
+
+    private fun standaloneLaunch(
+        system: String,
+        game: String?,
+        label: String,
+        packageName: String,
+        emulator: StandaloneEmulator,
+    ): EsdeLaunch {
+        val key = "$packageName\n${emulator.id}"
+        val chosenSaves = selectedFolder(key, false)?.let(::File)?.let(::usableFolder)
+        val chosenStates = selectedFolder(key, true)?.let(::File)?.let(::usableFolder)
+        fun candidate(state: Boolean): String? {
+            val paths = emulator.defaultPaths(packageName, state).map { File(shared, it) }.toMutableList()
+            if (emulator == StandaloneEmulator.LIME3DS && !state) {
+                val root = File(shared, "3DS/sdmc/Nintendo 3DS")
+                val id = Regex("[0-9a-fA-F]{32}")
+                paths += root.listFiles().orEmpty().filter { it.isDirectory && id.matches(it.name) }
+                    .flatMap { it.listFiles().orEmpty().filter { dir -> dir.isDirectory && id.matches(dir.name) } }
+                    .map { File(it, "title/00040000") }
+            }
+            // A legacy data tree can coexist with the active tree. Show a suggestion only if unique.
+            return paths.mapNotNull(::usableFolder).singleOrNull()
+        }
+        val saves = chosenSaves ?: candidate(false)
+        val states = chosenStates ?: candidate(true)
+        val displayLabel = when (emulator) {
+            StandaloneEmulator.DOLPHIN_GC -> "$label · GameCube"
+            StandaloneEmulator.DOLPHIN_WII -> "$label · Wii"
+            else -> label
+        }
+        return EsdeLaunch(
+            system, game, displayLabel, packageName, null, saves, states,
+            saveFoldersVerified = chosenSaves != null || chosenStates != null,
+            folderSelectionKey = key,
+            savesAutoDetected = chosenSaves == null && saves != null,
+            statesAutoDetected = chosenStates == null && states != null,
+        )
     }
 
     private val selectedFolders = context.getSharedPreferences("selected-emulator-folders", Context.MODE_PRIVATE)

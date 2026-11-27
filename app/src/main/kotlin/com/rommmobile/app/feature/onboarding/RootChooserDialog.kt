@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.R
 import com.rommmobile.app.core.design.PillShape
 import com.rommmobile.app.core.design.RommDialog
@@ -61,6 +62,7 @@ fun RootChooserDialog(
     var manual by remember { mutableStateOf("") }
     var manualError by remember { mutableStateOf<String?>(null) }
     val canPick = remember { StorageLocations.canOpenTree(context) }
+    val canUsePath = !canPick && BuildConfig.ALL_FILES_ACCESS_AVAILABLE
 
     // Re-check the permission when coming back from the system settings screen.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -83,24 +85,28 @@ fun RootChooserDialog(
     RommDialog(
         onDismissRequest = onDismiss,
         title = title,
-        confirmText = stringResource(if (canPick) R.string.root_pick_saf else R.string.action_use_path),
+        confirmText = stringResource(when {
+            canPick -> R.string.root_pick_saf
+            canUsePath -> R.string.action_use_path
+            else -> R.string.action_close
+        }),
         onConfirm = {
             if (canPick) {
                 runCatching { treeLauncher.launch(null) }
-            } else {
+            } else if (canUsePath) {
                 val f = File(manual.trim())
                 when {
                     manual.isBlank() -> manualError = context.getString(R.string.root_manual_empty)
                     !(f.isDirectory || f.mkdirs()) -> manualError = context.getString(R.string.root_manual_invalid)
                     else -> onChosen(StorageRoot.Direct(f.absolutePath))
                 }
-            }
+            } else onDismiss()
         },
     ) {
         Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-            Text(stringResource(R.string.root_pick_body), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(if (canPick || canUsePath) R.string.root_pick_body else R.string.root_picker_required), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(10.dp))
-            if (!allFiles) {
+            if (canUsePath && !allFiles) {
                 Text(stringResource(R.string.root_allfiles_body), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceMuted)
                 Spacer(Modifier.height(6.dp))
                 val intent = remember { StorageLocations.allFilesAccessIntent(context) }
@@ -115,7 +121,7 @@ fun RootChooserDialog(
                 }
                 Spacer(Modifier.height(10.dp))
             }
-            if (!canPick) {
+            if (canUsePath) {
                 Text(stringResource(R.string.root_no_picker), style = MaterialTheme.typography.bodySmall, color = colors.accent)
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(

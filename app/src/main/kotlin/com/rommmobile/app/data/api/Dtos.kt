@@ -91,6 +91,7 @@ data class RomDto(
     @SerialName("crc_hash") val crcHash: String? = null,
     @SerialName("md5_hash") val md5Hash: String? = null,
     @SerialName("sha1_hash") val sha1Hash: String? = null,
+    @SerialName("title_id") val titleId: String? = null,
     @SerialName("has_multiple_files") val hasMultipleFiles: Boolean = false,
     @SerialName("has_simple_single_file") val hasSimpleSingleFile: Boolean = true,
     @SerialName("has_nested_single_file") val hasNestedSingleFile: Boolean = false,

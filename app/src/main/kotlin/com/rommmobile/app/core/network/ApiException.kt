@@ -1,6 +1,7 @@
 package com.rommmobile.app.core.network
 
 import android.content.Context
+import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.R
 import kotlinx.serialization.SerializationException
 import java.io.IOException
@@ -50,7 +51,9 @@ class ApiException(
         ApiErrorKind.TIMEOUT -> context.getString(R.string.error_timeout)
         ApiErrorKind.OFFLINE -> context.getString(R.string.error_offline)
         ApiErrorKind.TLS -> context.getString(R.string.error_tls)
-        ApiErrorKind.CLEARTEXT_BLOCKED -> context.getString(R.string.error_cleartext_blocked)
+        ApiErrorKind.CLEARTEXT_BLOCKED -> context.getString(
+            if (BuildConfig.DIRECT_HTTP_AVAILABLE) R.string.error_cleartext_blocked else R.string.error_https_required,
+        )
         ApiErrorKind.SERVER -> context.getString(R.string.error_server, httpCode, detail ?: "")
         ApiErrorKind.PARSE -> context.getString(R.string.error_parse)
         ApiErrorKind.CANCELLED -> context.getString(R.string.error_cancelled)

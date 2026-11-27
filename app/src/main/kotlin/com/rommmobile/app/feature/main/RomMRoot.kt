@@ -46,6 +46,7 @@ import com.rommmobile.app.core.design.LocalScreenMargin
 import com.rommmobile.app.core.design.RommTheme
 import com.rommmobile.app.core.design.ToastHost
 import com.rommmobile.app.core.input.LocalGamepad
+import com.rommmobile.app.data.prefs.SaveSyncMethod
 import com.rommmobile.app.feature.downloads.DownloadsScreen
 import com.rommmobile.app.feature.downloads.engine.DownloadNotifier
 import com.rommmobile.app.feature.game.GameDetailScreen
@@ -149,7 +150,8 @@ private fun AppNavHost(appVm: AppViewModel, start: StartDestination, intentEpoch
     // gamepadTextField - is untouched.
     val backEntry by navController.currentBackStackEntryAsState()
     val destination = backEntry?.destination
-    if (destination != null && !destination.hasRoute<OnboardingRoute>() &&
+    val syncMethod by appVm.saveSyncMethod.collectAsStateWithLifecycle(initialValue = null)
+    if (syncMethod != null && syncMethod != SaveSyncMethod.RETROARCH && destination != null && !destination.hasRoute<OnboardingRoute>() &&
         !destination.hasRoute<LoginRoute>() && !destination.hasRoute<DiagnosticsRoute>() && !destination.hasRoute<SaveSyncSettingsRoute>()
     ) {
         EmulatorAccess(prompt = true)

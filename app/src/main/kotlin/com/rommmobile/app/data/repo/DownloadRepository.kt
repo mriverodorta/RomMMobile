@@ -1,6 +1,8 @@
 package com.rommmobile.app.data.repo
 
+import android.content.Context
 import com.rommmobile.app.core.network.ServerStore
+import com.rommmobile.app.core.storage.FileGatewayFactory
 import com.rommmobile.app.core.storage.StorageRoot
 import com.rommmobile.app.core.util.FileLogger
 import com.rommmobile.app.data.db.DownloadDao
@@ -12,9 +14,12 @@ import com.rommmobile.app.data.mapping.Resolution
 import com.rommmobile.app.data.prefs.SettingsStore
 import com.rommmobile.app.feature.downloads.engine.DownloadEngine
 import com.rommmobile.app.feature.downloads.engine.DownloadProgress
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,6 +35,7 @@ sealed interface EnqueueResult {
 
 @Singleton
 class DownloadRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val dao: DownloadDao,
     private val engine: DownloadEngine,
     private val mapping: MappingRepository,
@@ -127,24 +133,38 @@ class DownloadRepository @Inject constructor(
 
     /** BIOS files go to RetroArch/system (configurable), never into platform folders. */
     suspend fun enqueueFirmware(firmwareId: Int, fileName: String, sizeBytes: Long, md5: String?, sha1: String?, crc: String?, platformName: String): EnqueueResult {
-        val base = serverStore.config.value.activeUrl ?: return EnqueueResult.NotConfigured
-        val s = settings.snapshot()
-        val root = s.storageRoot as? StorageRoot.Direct ?: return EnqueueResult.NoRoot
-        val biosDir = s.biosPath?.takeIf { it.isNotBlank() } ?: (root.path.substringBeforeLast('/') + "/RetroArch/system")
-        dao.byRomAndName(-firmwareId, fileName)?.let { if (!it.state.isTerminal) return EnqueueResult.AlreadyQueued else dao.delete(it.id) }
-        if (java.io.File(biosDir, fileName).exists()) return EnqueueResult.AlreadyPresent
+        if (serverStore.config.value.activeUrl == null) return EnqueueResult.NotConfigured
+        if (fileName.isBlank() || fileName == "." || fileName == ".." || fileName.any { it == '/' || it == '\\' || it == '\u0000' }) {
+            return EnqueueResult.NotConfigured
+        }
+        val root = settings.snapshot().firmwareRoot ?: return EnqueueResult.NoRoot
+        val gateway = FileGatewayFactory.create(context, root)
+        if (!withContext(Dispatchers.IO) { gateway.isWritable() }) return EnqueueResult.NoRoot
+        if (withContext(Dispatchers.IO) { gateway.exists("", fileName) }) return EnqueueResult.AlreadyPresent
+        dao.byRomAndName(-firmwareId, fileName)?.let { existing ->
+            if (!existing.state.isTerminal) return EnqueueResult.AlreadyQueued
+            dao.delete(existing.id)
+        }
+        val target = when (root) {
+            is StorageRoot.Direct -> "abs:${root.path}/$fileName"
+            is StorageRoot.Saf -> root.serialize()
+        }
         val url = "api/firmware/$firmwareId/content/" + java.net.URLEncoder.encode(fileName, "UTF-8").replace("+", "%20")
         val now = System.currentTimeMillis()
-        val id = dao.insert(
-            DownloadEntity(
-                kind = DownloadKind.FIRMWARE, romId = -firmwareId, title = fileName, platformSlug = "bios", platformName = platformName,
-                fileName = fileName, url = url, targetRelDir = "abs:$biosDir/$fileName", extract = false, totalBytes = sizeBytes,
-                downloadedBytes = 0, state = DownloadState.PENDING, error = null, attempt = 0, priority = 1, notBefore = 0,
-                md5 = md5, sha1 = sha1, crc = crc, coverSmallPath = null, resultPath = null, createdAt = now, updatedAt = now, completedAt = null,
+        val id = try {
+            dao.insert(
+                DownloadEntity(
+                    kind = DownloadKind.FIRMWARE, romId = -firmwareId, title = fileName, platformSlug = "bios", platformName = platformName,
+                    fileName = fileName, url = url, targetRelDir = target, extract = false, totalBytes = sizeBytes,
+                    downloadedBytes = 0, state = DownloadState.PENDING, error = null, attempt = 0, priority = 1, notBefore = 0,
+                    md5 = md5, sha1 = sha1, crc = crc, coverSmallPath = null, resultPath = null, createdAt = now, updatedAt = now, completedAt = null,
+                ),
             )
-        )
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            return EnqueueResult.AlreadyQueued
+        }
         engine.kick()
-        return EnqueueResult.Enqueued(id, biosDir)
+        return EnqueueResult.Enqueued(id, root.displayName)
     }
 
     fun pause(id: Long) = engine.pause(id)

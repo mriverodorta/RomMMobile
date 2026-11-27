@@ -14,14 +14,17 @@ class DirectFileGateway(override val root: StorageRoot.Direct) : FileGateway {
 
     override fun exists(relDir: String, name: String): Boolean = File(dir(relDir), name).exists()
 
-    override fun list(relDir: String): List<FileInfo> {
-        val d = dir(relDir)
-        val children = d.listFiles() ?: return emptyList()
-        return children.mapNotNull { f ->
-            if (f.name.startsWith(".")) return@mapNotNull null
-            FileInfo(f.name, f.isDirectory, if (f.isDirectory) 0 else f.length(), f.lastModified())
+    override fun list(relDir: String): List<FileInfo> =
+        dir(relDir).listFiles().orEmpty().filterNot { it.name.startsWith(".") }.map(::fileInfo)
+
+    private fun fileInfo(file: File) =
+        FileInfo(file.name, file.isDirectory, if (file.isDirectory) 0 else file.length(), file.lastModified())
+
+    internal fun listSaveEntries(relDir: String): List<FileInfo>? =
+        dir(relDir).listFiles()?.map { file ->
+            check(!Files.isSymbolicLink(file.toPath())) { "Cannot sync a symbolic link." }
+            fileInfo(file)
         }
-    }
 
     override fun ensureDir(relDir: String): Boolean {
         val d = dir(relDir)

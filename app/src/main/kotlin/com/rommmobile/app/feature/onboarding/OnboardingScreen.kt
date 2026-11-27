@@ -79,6 +79,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.R
 import com.rommmobile.app.core.design.PadButton
 import com.rommmobile.app.core.design.PadGlyph
@@ -148,8 +149,8 @@ fun OnboardingScreen(onDone: () -> Unit) {
     // recorded: the first prompt is Up, which every d-pad reports the same way, so no map is
     // needed to begin. Once per wizard run, remembered in the ViewModel: a flag inside the step
     // would not survive leaving it, and a recorded map can equal the default (the Classic's).
-    LaunchedEffect(state.step, state.loaded, hasGamepad) {
-        if (state.step == STEP_CONTROLS && state.loaded && hasGamepad && !state.buttonMapRecorded && !state.controlsPrompted) {
+    LaunchedEffect(state.step, state.loaded, hasGamepad, layout.isTv) {
+        if (!layout.isTv && state.step == STEP_CONTROLS && state.loaded && hasGamepad && !state.buttonMapRecorded && !state.controlsPrompted) {
             vm.markControlsPrompted()
             capture = CaptureSession(CaptureSession.FULL_ORDER, ButtonMap.EMPTY, refuseDuplicates = true)
         }
@@ -179,7 +180,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
                     STEP_SERVER -> ServerStep(state, vm::onServerInput, vm::setAdvanced)
                     STEP_AUTH -> AuthStep(state, session, vm)
                     STEP_LAUNCHER -> LauncherStep(state.launcher, vm::setLauncher)
-                    STEP_STORAGE -> StorageStep(state, vm)
+                    STEP_STORAGE -> StorageStep(state, vm) { vm.finish(onDone, withoutStorage = true) }
                     else -> SummaryStep(state, vm)
                 }
             }
@@ -265,16 +266,17 @@ private fun ServerStep(
     val layout = RommTheme.layout
     val fr = remember { FocusRequester() }
     var advanced by remember { mutableStateOf(false) }
+    val advancedLabel = stringResource(if (BuildConfig.DIRECT_HTTP_AVAILABLE) R.string.ob_server_advanced else R.string.settings_cf_access)
     LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(layout.padding * 2)) {
-        Text(stringResource(R.string.ob_server_body), style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(if (BuildConfig.DIRECT_HTTP_AVAILABLE) R.string.ob_server_body else R.string.ob_server_https_body), style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = state.serverInput,
             onValueChange = onInput,
             singleLine = true,
             label = { Text(stringResource(R.string.ob_server_label)) },
-            placeholder = { Text("http://192.168.50.11:8080") },
+            placeholder = { Text(if (BuildConfig.DIRECT_HTTP_AVAILABLE) "http://192.168.50.11:8080" else "https://romm.example.com") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp).focusRequester(fr).gamepadTextField(MaterialTheme.shapes.small),
         )
@@ -289,7 +291,7 @@ private fun ServerStep(
         }
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = { advanced = true }, modifier = Modifier.gamepadFocusRing(PillShape)) {
-            Text(stringResource(R.string.ob_server_advanced))
+            Text(advancedLabel)
         }
         if (state.cfClientId.isNotBlank() || state.allowInsecureRemote) {
             Text(
@@ -321,7 +323,7 @@ private fun AdvancedServerDialog(
     var insecure by remember { mutableStateOf(state.allowInsecureRemote) }
     RommDialog(
         onDismissRequest = onDismiss,
-        title = stringResource(R.string.ob_server_advanced),
+        title = stringResource(if (BuildConfig.DIRECT_HTTP_AVAILABLE) R.string.ob_server_advanced else R.string.settings_cf_access),
         confirmText = stringResource(R.string.action_save),
         onConfirm = { onConfirm(id, secret, insecure) },
         focusConfirm = false,
@@ -332,13 +334,15 @@ private fun AdvancedServerDialog(
             OutlinedTextField(id, { id = it }, singleLine = true, label = { Text("CF-Access-Client-Id") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(secret, { secret = it }, singleLine = true, label = { Text("CF-Access-Client-Secret") }, modifier = Modifier.fillMaxWidth().gamepadTextField(MaterialTheme.shapes.small))
-            Spacer(Modifier.height(4.dp))
-            SwitchRow(
-                title = stringResource(R.string.settings_allow_insecure),
-                checked = insecure,
-                onCheckedChange = { insecure = it },
-                subtitle = stringResource(R.string.settings_allow_insecure_hint),
-            )
+            if (BuildConfig.DIRECT_HTTP_AVAILABLE) {
+                Spacer(Modifier.height(4.dp))
+                SwitchRow(
+                    title = stringResource(R.string.settings_allow_insecure),
+                    checked = insecure,
+                    onCheckedChange = { insecure = it },
+                    subtitle = stringResource(R.string.settings_allow_insecure_hint),
+                )
+            }
         }
     }
 }
@@ -349,14 +353,6 @@ private fun AdvancedServerDialog(
 private fun AuthStep(state: OnboardingState, session: Session, vm: OnboardingViewModel) {
     val colors = RommTheme.colors
     val layout = RommTheme.layout
-    val context = LocalContext.current
-    // The device flow is the default method, so nothing triggers setAuthMethod for it: start it
-    // when the step is first shown, otherwise the panel sits on a spinner forever.
-    LaunchedEffect(state.authMethod, session) {
-        if (state.authMethod == AuthMethod.DEVICE && session !is Session.LoggedIn && state.device.init == null && state.device.error == null) {
-            vm.restartDeviceFlow()
-        }
-    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = layout.padding)) {
         if (session is Session.LoggedIn) {
@@ -431,9 +427,14 @@ private fun DeviceMethod(d: DeviceFlowState, vm: OnboardingViewModel) {
             d.error != null -> {
                 Text(d.error, color = colors.red, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = { vm.restartDeviceFlow() }, modifier = Modifier.gamepadFocusRing(PillShape)) { Text(stringResource(R.string.action_retry)) }
+                Button(onClick = vm::requestDeviceCode, modifier = Modifier.gamepadFocusRing(PillShape)) { Text(stringResource(R.string.action_retry)) }
             }
-            init == null -> CircularProgressIndicator()
+            d.requesting -> CircularProgressIndicator()
+            init == null -> {
+                Button(onClick = vm::requestDeviceCode, modifier = Modifier.gamepadFocusRing(PillShape)) {
+                    Text(stringResource(R.string.auth_device_request))
+                }
+            }
             else -> {
                 // One thing to do: point a phone at the code. The link already carries the
                 // pairing code, so there is nothing left to type or to copy across.
@@ -569,16 +570,12 @@ private fun ControlsStep(state: OnboardingState, onRecord: () -> Unit) {
 /* ---------------------------------- step 5 ---------------------------------- */
 
 @Composable
-private fun StorageStep(state: OnboardingState, vm: OnboardingViewModel) {
+private fun StorageStep(state: OnboardingState, vm: OnboardingViewModel, onSkip: () -> Unit) {
     val colors = RommTheme.colors
     val layout = RommTheme.layout
     val context = LocalContext.current
     var chooser by remember { mutableStateOf(false) }
-    // Order matters here: access first, folder second. Without All files access the picked folder
-    // silently becomes a SAF tree that every write has to go through, so the choice must not be
-    // offered before the permission has been dealt with.
     var allFiles by remember { mutableStateOf(StorageLocations.hasAllFilesAccess(context)) }
-    val grantIntent = remember { StorageLocations.allFilesAccessIntent(context) }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, event ->
@@ -594,11 +591,11 @@ private fun StorageStep(state: OnboardingState, vm: OnboardingViewModel) {
         lifecycleOwner.lifecycle.addObserver(obs)
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
-    val settingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    val canPick = remember(context) { StorageLocations.canOpenTree(context) }
+    val canSkip = layout.isTv && !canPick
+    val canChoose = canPick || BuildConfig.ALL_FILES_ACCESS_AVAILABLE || !canSkip
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(layout.padding * 2)) {
-        Text(stringResource(R.string.ob_storage_body), style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(8.dp))
-        Text(stringResource(if (allFiles) R.string.ob_storage_allfiles_ok else R.string.ob_storage_allfiles_missing), style = MaterialTheme.typography.bodyMedium, color = if (allFiles) colors.green else colors.accent)
+        Text(stringResource(if (canSkip) R.string.ob_storage_tv_cloud_sync else R.string.ob_storage_body), style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(16.dp))
         val root = state.root
         if (root != null) {
@@ -616,18 +613,18 @@ private fun StorageStep(state: OnboardingState, vm: OnboardingViewModel) {
         }
         val fr = remember { FocusRequester() }
         LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
-        when {
-            root == null ->
-                Button(onClick = { chooser = true }, modifier = Modifier.focusRequester(fr).gamepadFocusRing(PillShape)) { Text(stringResource(R.string.ob_storage_choose)) }
-            else ->
-                OutlinedButton(onClick = { chooser = true }, modifier = Modifier.focusRequester(fr).gamepadFocusRing(PillShape)) { Text(stringResource(R.string.ob_storage_change)) }
+        if (canChoose) {
+            val focus = if (canSkip) Modifier else Modifier.focusRequester(fr)
+            if (root == null) {
+                Button(onClick = { chooser = true }, modifier = focus.gamepadFocusRing(PillShape)) { Text(stringResource(R.string.ob_storage_choose)) }
+            } else {
+                OutlinedButton(onClick = { chooser = true }, modifier = focus.gamepadFocusRing(PillShape)) { Text(stringResource(R.string.ob_storage_change)) }
+            }
         }
-        if (!allFiles && grantIntent != null) {
-            // Came back without granting: the folder is offered, the grant stays one press away as
-            // the quieter option, whether a folder is already set or not.
-            Spacer(Modifier.height(6.dp))
-            TextButton(onClick = { settingsLauncher.launch(grantIntent) }, modifier = Modifier.gamepadFocusRing(PillShape)) {
-                Text(stringResource(R.string.root_allfiles_grant))
+        if (canSkip) {
+            if (canChoose) Spacer(Modifier.height(12.dp))
+            Button(onClick = onSkip, modifier = Modifier.focusRequester(fr).gamepadFocusRing(PillShape)) {
+                Text(stringResource(R.string.ob_storage_tv_skip))
             }
         }
         if (state.launcher == Launcher.ESDE && state.rootWritable == true && root != null) {

@@ -6,6 +6,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.core.network.ApiException
 import com.rommmobile.app.core.network.ServerStore
 import com.rommmobile.app.core.network.UrlNormalizer
@@ -62,6 +63,7 @@ data class DeviceFlowState(
     val secondsLeft: Int = 0,
     val verificationUrl: String = "",
     val error: String? = null,
+    val requesting: Boolean = false,
 )
 
 @Immutable
@@ -122,10 +124,9 @@ class OnboardingViewModel @Inject constructor(
             val cfg = serverStore.config.value
             _state.update {
                 it.copy(
-                    // Prefilled scheme: typing "http://" with a d-pad keyboard is pure pain.
-                    serverInput = cfg.baseUrl ?: "http://", launcher = s.launcher, root = s.storageRoot,
+                    serverInput = cfg.baseUrl ?: "${UrlNormalizer.defaultScheme}://", launcher = s.launcher, root = s.storageRoot,
                     cfClientId = cfg.cfClientId.orEmpty(), cfClientSecret = cfg.cfClientSecret.orEmpty(),
-                    allowInsecureRemote = s.allowInsecureRemote,
+                    allowInsecureRemote = BuildConfig.DIRECT_HTTP_AVAILABLE && s.allowInsecureRemote,
                     buttonMap = s.buttonMap,
                     buttonMapRecorded = s.buttonMapRecorded,
                     loaded = true,
@@ -164,7 +165,7 @@ class OnboardingViewModel @Inject constructor(
      */
     fun setAdvanced(cfId: String, cfSecret: String, allowInsecure: Boolean) = viewModelScope.launch {
         serverStore.setCloudflareAccess(cfId.trim().ifBlank { null }, cfSecret.trim().ifBlank { null })
-        settings.setAllowInsecureRemote(allowInsecure)
+        if (BuildConfig.DIRECT_HTTP_AVAILABLE) settings.setAllowInsecureRemote(allowInsecure)
         _state.update { it.copy(cfClientId = cfId.trim(), cfClientSecret = cfSecret.trim(), allowInsecureRemote = allowInsecure) }
         delay(250) // let the interceptor pick the new policy up before probing again
         _state.value.serverInput.takeIf { it.isNotBlank() }?.let { probeNow(it) }
@@ -179,8 +180,9 @@ class OnboardingViewModel @Inject constructor(
     /* -------- step 2: auth -------- */
 
     fun setAuthMethod(m: AuthMethod) {
-        _state.update { it.copy(authMethod = m, auth = AuthUiState.Idle) }
-        if (m == AuthMethod.DEVICE) startDeviceFlow() else stopDeviceFlow()
+        if (_state.value.authMethod == m) return
+        stopDeviceFlow()
+        _state.update { it.copy(authMethod = m, auth = AuthUiState.Idle, device = DeviceFlowState()) }
     }
 
     fun loginPassword(user: String, pass: String) = runAuth { auth.loginWithPassword(user.trim(), pass) }
@@ -194,10 +196,10 @@ class OnboardingViewModel @Inject constructor(
         if (r.isSuccess) { stopDeviceFlow(); afterLogin() }
     }
 
-    private fun startDeviceFlow() {
+    fun requestDeviceCode() {
         stopDeviceFlow()
+        _state.update { it.copy(device = DeviceFlowState(requesting = true)) }
         devicePollJob = viewModelScope.launch {
-            _state.update { it.copy(device = DeviceFlowState()) }
             val init = auth.deviceFlowStart().getOrElse { e ->
                 _state.update { it.copy(device = DeviceFlowState(error = ApiException.from(e).userMessage(context))) }
                 return@launch
@@ -229,8 +231,6 @@ class OnboardingViewModel @Inject constructor(
             _state.update { it.copy(device = it.device.copy(error = context.getString(com.rommmobile.app.R.string.auth_device_expired))) }
         }
     }
-
-    fun restartDeviceFlow() = startDeviceFlow()
 
     private fun stopDeviceFlow() { devicePollJob?.cancel(); devicePollJob = null }
 
@@ -304,9 +304,10 @@ class OnboardingViewModel @Inject constructor(
         _state.update { it.copy(step = clamped) }
     }
 
-    fun finish(onDone: () -> Unit) = viewModelScope.launch {
+    fun finish(onDone: () -> Unit, withoutStorage: Boolean = false) = viewModelScope.launch {
+        if (withoutStorage) settings.setStorageRoot(null)
         settings.setOnboardingDone(true)
-        launch { runCatching { localLibrary.rescanAll() } }
+        if (!withoutStorage) launch { runCatching { localLibrary.rescanAll() } }
         onDone()
     }
 

@@ -16,8 +16,11 @@ android {
         applicationId = "com.maikeldorta.rommmobiles"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.0.3"
+        versionCode = 14
+        versionName = "1.0.5"
+        manifestPlaceholders["leanbackRequired"] = "false"
+        buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "true")
+        buildConfigField("boolean", "DIRECT_HTTP_AVAILABLE", "true")
         vectorDrawables.useSupportLibrary = true
         // Only ship resources for the locales we actually translate.
         resourceConfigurations += listOf("en", "it")
@@ -33,6 +36,14 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+        }
+        create("playRelease") {
+            initWith(getByName("release"))
+            matchingFallbacks += "release"
+            manifestPlaceholders["leanbackRequired"] =
+                providers.gradleProperty("rommmobilesTvOnly").map { it.toBooleanStrict() }.getOrElse(false).toString()
+            buildConfigField("boolean", "ALL_FILES_ACCESS_AVAILABLE", "false")
+            buildConfigField("boolean", "DIRECT_HTTP_AVAILABLE", "false")
         }
     }
 

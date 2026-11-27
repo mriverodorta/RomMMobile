@@ -1,20 +1,23 @@
 package com.rommmobile.app.core.network
 
+import com.rommmobile.app.BuildConfig
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 object UrlNormalizer {
 
+    val defaultScheme = if (BuildConfig.DIRECT_HTTP_AVAILABLE) "http" else "https"
+
     /**
      * Turns whatever the user typed into a canonical base URL:
-     * `192.168.50.11:8080` -> `http://192.168.50.11:8080`, strips trailing slashes and
-     * fragments, keeps an optional path prefix (reverse proxies mounting RomM under /romm).
+     * Adds the default scheme when omitted, strips trailing slashes and fragments,
+     * and keeps an optional path prefix (reverse proxies mounting RomM under /romm).
      * Returns null when the input cannot be a URL at all.
      */
     fun normalize(input: String): String? {
         var s = input.trim()
         if (s.isEmpty()) return null
-        if (!s.contains("://")) s = "http://$s"
+        if (!s.contains("://")) s = "$defaultScheme://$s"
         val url: HttpUrl = s.toHttpUrlOrNull() ?: return null
         if (url.host.isEmpty()) return null
         val path = url.encodedPath.trimEnd('/')

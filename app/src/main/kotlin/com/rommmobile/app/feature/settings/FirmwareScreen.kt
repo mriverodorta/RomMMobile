@@ -35,7 +35,7 @@ import com.rommmobile.app.core.design.Toaster
 import com.rommmobile.app.core.input.rightStickScroll
 import com.rommmobile.app.core.network.ApiException
 import com.rommmobile.app.core.network.apiCall
-import com.rommmobile.app.core.storage.StorageRoot
+import com.rommmobile.app.core.storage.FileGatewayFactory
 import com.rommmobile.app.core.util.Format
 import com.rommmobile.app.data.api.FirmwareDto
 import com.rommmobile.app.data.api.RommApi
@@ -47,6 +47,7 @@ import com.rommmobile.app.data.repo.PlatformRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +55,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.File
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class FirmwareItem(val dto: FirmwareDto, val present: Boolean)
@@ -77,16 +78,8 @@ class FirmwareViewModel @Inject constructor(
     val items: StateFlow<List<FirmwareItem>?> = _items.asStateFlow()
     private val _error = MutableStateFlow<ApiException?>(null)
     val error: StateFlow<ApiException?> = _error.asStateFlow()
-    private val _biosDir = MutableStateFlow<String?>(null)
-    val biosDir: StateFlow<String?> = _biosDir.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            val s = settings.snapshot()
-            val root = s.storageRoot as? StorageRoot.Direct
-            _biosDir.value = s.biosPath?.takeIf { it.isNotBlank() } ?: root?.let { it.path.substringBeforeLast('/') + "/RetroArch/system" }
-        }
-    }
+    val biosDir: StateFlow<String?> = settings.settings.map { it.firmwareRoot?.displayName }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun select(p: Platform?) {
         _selected.value = p
@@ -96,8 +89,11 @@ class FirmwareViewModel @Inject constructor(
 
     private fun load(p: Platform) = viewModelScope.launch {
         apiCall { api.firmware(p.id) }.onSuccess { list ->
-            val dir = _biosDir.value
-            _items.value = list.map { f -> FirmwareItem(f, dir != null && File(dir, f.fileName).exists()) }
+            val root = settings.snapshot().firmwareRoot
+            _items.value = withContext(Dispatchers.IO) {
+                val gateway = root?.let { FileGatewayFactory.create(context, it) }
+                list.map { firmware -> FirmwareItem(firmware, gateway?.exists("", firmware.fileName) == true) }
+            }
             _error.value = null
         }.onFailure { _error.value = ApiException.from(it) }
     }
@@ -108,7 +104,7 @@ class FirmwareViewModel @Inject constructor(
             is EnqueueResult.Enqueued -> toaster.show(context.getString(R.string.toast_enqueued, r.relDir))
             EnqueueResult.AlreadyPresent -> toaster.show(context.getString(R.string.bios_already_present))
             EnqueueResult.AlreadyQueued -> toaster.show(context.getString(R.string.toast_already_queued))
-            EnqueueResult.NoRoot -> toaster.show(context.getString(R.string.bios_needs_direct), isError = true)
+            EnqueueResult.NoRoot -> toaster.show(context.getString(R.string.bios_choose_folder), isError = true)
             else -> toaster.show(context.getString(R.string.error_unknown, ""), isError = true)
         }
     }
@@ -129,7 +125,7 @@ fun FirmwareScreen(onBack: () -> Unit) {
     val listState = rememberLazyListState()
 
     Column(Modifier.fillMaxSize()) {
-        RommTopBar(title = selected?.name ?: stringResource(R.string.settings_bios), subtitle = biosDir ?: stringResource(R.string.bios_needs_direct), onBack = { if (selected != null) vm.select(null) else onBack() })
+        RommTopBar(title = selected?.name ?: stringResource(R.string.settings_bios), subtitle = biosDir ?: stringResource(R.string.bios_choose_folder), onBack = { if (selected != null) vm.select(null) else onBack() })
         val p = selected
         when {
             p == null -> {

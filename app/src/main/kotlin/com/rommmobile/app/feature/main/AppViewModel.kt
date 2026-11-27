@@ -57,6 +57,7 @@ class AppViewModel @Inject constructor(
 ) : ViewModel() {
 
     val saveSyncEnabled = settings.saveSyncEnabled
+    val saveSyncMethod = settings.saveSyncMethod
 
     val startDestination: StateFlow<StartDestination> = combine(settings.onboardingDone, auth.session) { done, session ->
         when {

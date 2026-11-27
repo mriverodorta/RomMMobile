@@ -40,6 +40,7 @@ internal fun hasExitWrite(now: Long, resumed: Long, stopped: Long, exitTimes: ()
 @Singleton
 class RetroArchExit @Inject constructor(@param:ApplicationContext private val context: Context) {
     private val confirmedStops = mutableMapOf<String, Long>()
+    private var dolphinStopObservedAt = 0L
 
     fun canRestore(packageName: String, exitWriteTimes: () -> List<Long>): Boolean {
         if (!packageName.startsWith("com.retroarch")) return false
@@ -79,6 +80,40 @@ class RetroArchExit @Inject constructor(@param:ApplicationContext private val co
         val exited = hasExitWrite(now, resumed, stopped, exitWriteTimes)
         if (exited) confirmedStops[packageName] = stopped
         return exited
+    }
+
+    fun canRestoreStandalone(packageName: String): Boolean {
+        val dolphin = packageName == "org.dolphinemu.dolphinemu"
+        if (isStoppedByAndroid(packageName)) {
+            if (dolphin) dolphinStopObservedAt = System.currentTimeMillis()
+            return true
+        }
+        if (!hasEmulatorUsageAccess(context)) return false
+        val now = System.currentTimeMillis()
+        val boot = now - SystemClock.elapsedRealtime()
+        // Opening Dolphin's document provider can restart its process without launching a game.
+        val observedStop = dolphinStopObservedAt.takeIf { dolphin && it in boot..now }
+        val events = try {
+            context.getSystemService(UsageStatsManager::class.java)
+                .queryEvents(observedStop ?: maxOf(0L, boot - 1_000L), now)
+        } catch (_: SecurityException) {
+            null
+        } ?: return false
+        val event = UsageEvents.Event()
+        var startup = 0L
+        while (events.getNextEvent(event)) {
+            if (event.eventType == UsageEvents.Event.DEVICE_STARTUP) startup = event.timeStamp
+            if (event.packageName == packageName && event.eventType in setOf(
+                    UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED,
+                )
+            ) {
+                if (dolphin) dolphinStopObservedAt = 0L
+                return false
+            }
+        }
+        if (observedStop != null) return true
+        // A stopped activity can still own a loaded game. Only trust current-boot coverage before launch.
+        return canRestoreBeforeFirstLaunch(now, boot, startup, 0, 0)
     }
 
     @Suppress("DEPRECATION") // Keep using the overload available on Android 8.

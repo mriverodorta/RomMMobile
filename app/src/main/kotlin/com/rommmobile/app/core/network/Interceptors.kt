@@ -1,5 +1,6 @@
 package com.rommmobile.app.core.network
 
+import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.data.prefs.SettingsStore
 import com.rommmobile.app.di.ApplicationScope
 import kotlinx.coroutines.CoroutineScope
@@ -52,9 +53,8 @@ class HostSelectionInterceptor @Inject constructor(private val serverStore: Serv
 }
 
 /**
- * Plain HTTP is fine on the LAN (private ranges, .local) and refused towards the internet
- * unless the user explicitly allowed it in settings. Enforced in code because
- * network_security_config cannot express IP ranges.
+ * The Play build requires HTTPS. The GitHub build permits LAN HTTP and honors the
+ * explicit remote HTTP setting. The interceptor applies the same rules to redirects.
  */
 @Singleton
 class CleartextPolicyInterceptor @Inject constructor(
@@ -85,7 +85,8 @@ class CleartextPolicyInterceptor @Inject constructor(
     }
 
     private fun checkCleartext(url: HttpUrl) {
-        if (!url.isHttps && !UrlNormalizer.isPrivateHost(url.host) && !allowInsecureRemote) {
+        if (!url.isHttps && (!BuildConfig.DIRECT_HTTP_AVAILABLE ||
+                (!UrlNormalizer.isPrivateHost(url.host) && !allowInsecureRemote))) {
             throw ApiException(ApiErrorKind.CLEARTEXT_BLOCKED, endpoint = url.host)
         }
     }

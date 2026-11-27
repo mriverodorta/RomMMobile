@@ -8,11 +8,11 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.core.esde.EsdeDetector
 import com.rommmobile.app.core.esde.EsdeLaunch
+import com.rommmobile.app.core.esde.StandaloneEmulator
 import com.rommmobile.app.core.network.ApiException
 import com.rommmobile.app.core.network.AuthStore
 import com.rommmobile.app.core.network.ServerStore
 import com.rommmobile.app.core.storage.FileInfo
-import com.rommmobile.app.core.storage.normalizeFolderName
 import com.rommmobile.app.core.storage.normalizeFolderName
 import com.rommmobile.app.core.util.FileLogger
 import com.rommmobile.app.data.api.RomDto
@@ -27,6 +27,7 @@ import com.rommmobile.app.data.api.SaveSyncManifest
 import com.rommmobile.app.data.api.SaveSyncOperation
 import com.rommmobile.app.data.mapping.PlatformMapLoader
 import com.rommmobile.app.data.prefs.SettingsStore
+import com.rommmobile.app.data.prefs.SaveSyncMethod
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -39,12 +40,37 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.ResponseBody
 import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+
+// Keep per-game overrides even when their folders are excluded, so the system default cannot claim them.
+internal fun EsdeLaunch.forBackgroundSync(excludeRetroArch: Boolean): EsdeLaunch =
+    when {
+        !saveFoldersVerified || (excludeRetroArch && isRetroArch) ->
+            copy(saves = null, states = null, runtimeLogRoot = null)
+        standalone != null -> copy(
+            saves = saves.takeUnless { savesAutoDetected },
+            states = states.takeUnless { statesAutoDetected },
+        )
+        else -> this
+    }
+
+internal fun syncRomFileName(rom: RomDto): String? = when {
+    rom.hasSimpleSingleFile -> rom.fsName
+    rom.hasNestedSingleFile -> rom.files.filter { it.category == "game" }.singleOrNull()
+        ?.takeIf { it.sha1Hash != null && it.sha1Hash.equals(rom.sha1Hash, ignoreCase = true) }
+        ?.fileName
+    else -> null
+}
+
+private val standaloneRecency = compareBy<SaveSyncDetails> { it.updatedAt ?: it.createdAt }.thenBy { it.id }
+
+internal fun standaloneIdKey(profile: String, romHash: String) = "$profile:${romHash.lowercase()}"
 
 internal const val MAX_SAVE_BYTES = 32 * 1024 * 1024
 private val saveSuffix = Regex("""\.(?:srm|sav|rtc|state(?:[0-9]+|\.auto)?)""")
@@ -112,7 +138,12 @@ class SaveSyncEngine @Inject constructor(
     private val log: FileLogger,
     private val retroArchExit: RetroArchExit,
 ) {
-    private data class Game(val rom: RomDto, val stem: String, val launch: EsdeLaunch) {
+    private data class Game(
+        val rom: RomDto,
+        val stem: String,
+        val launch: EsdeLaunch,
+        val standaloneId: String?,
+    ) {
         val core: String get() = checkNotNull(launch.core)
         val emulator: String get() = "retroarch-$core"
 
@@ -126,29 +157,63 @@ class SaveSyncEngine @Inject constructor(
     private data class LocalRom(val file: SyncFile, val entry: FileInfo, val launch: EsdeLaunch) {
         val stem: String get() = entry.name.substringBeforeLast('.')
     }
-    private data class Catalog(val account: String, val systems: Set<String>, val expires: Long, val roms: Map<String, List<RomDto>>)
+    private data class Catalog(
+        val account: String,
+        val systems: Set<String>,
+        val standaloneSystems: Set<String>,
+        val expires: Long,
+        val roms: Map<String, List<RomDto>>,
+    )
     private data class RomHash(val length: Long, val modified: Long, val hash: String)
 
     private val syncedVersions = context.getSharedPreferences("save_sync_common_versions", Context.MODE_PRIVATE)
     private val saveVersions = context.getSharedPreferences("save_sync_local_versions", Context.MODE_PRIVATE)
     private val preferences = context.getSharedPreferences("save_sync_device", Context.MODE_PRIVATE)
+    private val standaloneIds = context.getSharedPreferences("standalone_game_ids", Context.MODE_PRIVATE)
     private var catalog: Catalog? = null
     private val romHashes = mutableMapOf<String, RomHash>()
 
     private val scanLock = Mutex()
     private var auditedAccount: String? = null
     private val auditedBattery = mutableMapOf<Pair<Int, String>, SaveSyncOperation>()
+    private var syncLayoutAccount: String? = null
+    private var syncLayoutCheckedAt: Long = 0L
+    private var useCompatibleLayout = false
+    private val stateHashes = object : LinkedHashMap<Int, Pair<String, String>>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, Pair<String, String>>?) = size > 256
+    }
 
     internal suspend fun run(apply: Boolean, watch: (Set<SyncWatchFolder>) -> Unit): SaveSyncResult =
-        scanLock.withLock { scan(apply, watch) }
+        scanLock.withLock {
+            if (settings.saveSyncEnabled.first()) scan(apply, watch) else SaveSyncResult(0, 0)
+        }
+
+    internal suspend fun setMethod(method: SaveSyncMethod) = scanLock.withLock {
+        settings.setSaveSyncMethod(method)
+    }
+
+    internal suspend fun setExcludeRetroArch(excluded: Boolean) = scanLock.withLock {
+        if (settings.saveSyncEnabled.first()) settings.setExcludeRetroArch(excluded)
+    }
+
+    internal suspend fun selectEmulatorFolder(key: String, state: Boolean, path: String): Boolean =
+        scanLock.withLock { detector.selectSharedFolder(key, state, path) }
+
+    internal fun gameIdOverride(profile: String, hash: String): String? =
+        standaloneIds.getString(standaloneIdKey(profile, hash), null)
+
+    internal suspend fun setGameIdOverride(profile: String, hash: String, id: String?) = scanLock.withLock {
+        val key = standaloneIdKey(profile, hash)
+        standaloneIds.edit().apply {
+            if (id == null) remove(key) else putString(key, id)
+        }.apply()
+    }
 
     private suspend fun scan(apply: Boolean, watch: (Set<SyncWatchFolder>) -> Unit): SaveSyncResult {
         val config = settings.snapshot()
         val detected = detector.detect(config.storageRoot, settings.esdeDataTree())
-        // A guessed directory is useful for diagnostics but cannot be a sync source.
-        val launches = detected.launches.map { launch ->
-            if (launch.saveFoldersVerified) launch else launch.copy(saves = null, states = null)
-        }
+        val excludeRetroArch = settings.excludeRetroArch.first()
+        val launches = detected.launches.map { it.forBackgroundSync(excludeRetroArch) }
         val batteryEnabled = settings.syncBatterySaves.first()
         val statesEnabled = settings.syncSaveStates.first()
         fun enabled(suffix: String) = if (suffix.startsWith(".state")) statesEnabled else batteryEnabled
@@ -168,6 +233,7 @@ class SaveSyncEngine @Inject constructor(
         val account = digest("$serverUrl\n$remoteUrl\n$user".encodeToByteArray(), "SHA-256")
         if (auditedAccount != account) {
             auditedBattery.clear()
+            stateHashes.clear()
             auditedAccount = account
         }
         val device = sessionAuth.deviceId ?: device(account)
@@ -180,6 +246,10 @@ class SaveSyncEngine @Inject constructor(
 
         val stateFolders = launches.groupBy { it.packageName }
             .mapValues { (_, rows) -> rows.mapNotNull { folders[it.states] }.distinct() }
+        // Snapshot a force-stop before any watcher or read binds Dolphin's document provider.
+        if (launches.any { it.packageName == "org.dolphinemu.dolphinemu" && (it.saves != null || it.states != null) }) {
+            retroArchExit.canRestoreStandalone("org.dolphinemu.dolphinemu")
+        }
         val runtimeLogs = launches.filter { it.runtimeLogRoot != null && it.core != null }
             .groupBy { it.packageName }
             .mapValues { (_, rows) ->
@@ -191,9 +261,11 @@ class SaveSyncEngine @Inject constructor(
                         .map { root.child(it.name) }
                 }
             }
-        watch((folders.values + runtimeLogs.values.flatten()).mapNotNull { it.watchFolder() }.toSet())
+        val rootWatches = (folders.values + runtimeLogs.values.flatten()).mapNotNull { it.watchFolder() }.toSet()
+        watch(rootWatches)
         fun emulatorExited(launch: EsdeLaunch): Boolean {
             val pkg = launch.packageName ?: return false
+            if (launch.standalone != null) return retroArchExit.canRestoreStandalone(pkg)
             return retroArchExit.canRestore(pkg, {
                 val states = stateFolders[pkg].orEmpty().flatMap { it.list() }
                     .filter { !it.isDirectory && it.name.endsWith(".state.auto") }
@@ -203,14 +275,40 @@ class SaveSyncEngine @Inject constructor(
             })
         }
 
-        val games = matchGames(launches, loadCatalog(account, launches.map { it.system }.toSet()))
+        val standaloneSystems = launches.filter { it.standalone != null && (it.saves != null || it.states != null) }
+            .map { it.system }.toSet()
+        val games = matchGames(launches, loadCatalog(account, launches.map { it.system }.toSet(), standaloneSystems))
         var result = SaveSyncResult(folders.size, games.size)
         val filesByDirectory = folders.mapValues { (path, folder) ->
             val users = launches.filter { it.saves == path || it.states == path }.distinctBy { it.packageName }
             if (users.isNotEmpty() && users.all(::emulatorExited)) folder.recover()
             folder.list().filterNot { it.isDirectory }.map { folder.file(it.name) }
         }
-        val uniqueIds = games.groupBy { it.rom.id }.values.mapNotNull { it.singleOrNull() }
+        val uniqueGames = games.groupBy { it.rom.id }.values.mapNotNull { it.singleOrNull() }
+        val uniqueIds = uniqueGames.filter { it.launch.isRetroArch }
+        val standaloneGames = uniqueGames.filter { it.standaloneId != null }
+            .groupBy { it.launch.standalone to it.standaloneId }.values.mapNotNull { it.singleOrNull() }
+        if (uniqueGames.isEmpty()) return result
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (syncLayoutAccount != account || now - syncLayoutCheckedAt >= 300_000L) {
+            val version = api.heartbeat().system?.version ?: server.config.value.serverVersion
+            sameAccount()
+            useCompatibleLayout = usesRommSaveLayout(version)
+            syncLayoutAccount = account
+            syncLayoutCheckedAt = now
+        }
+        if (useCompatibleLayout) {
+            fun mayRestore(launch: EsdeLaunch) =
+                apply && ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                    emulatorExited(launch)
+
+            result = syncStandaloneSaves(standaloneGames, folders, account, device, result,
+                batteryEnabled, statesEnabled, ::sameAccount, ::mayRestore) { watch(rootWatches + it) }
+            return syncCompatibleSaves(
+                uniqueIds, folders, filesByDirectory, account, device, result, ::enabled, ::sameAccount,
+            ) { game -> mayRestore(game.launch) }
+        }
+        if (standaloneGames.isNotEmpty()) result = result.copy(failed = result.failed + standaloneGames.size)
         val stagedFiles = mutableSetOf<File>()
         val stageDir = File(context.cacheDir, "save-sync/$account")
         for (batch in uniqueIds.chunked(100)) {
@@ -391,6 +489,356 @@ class SaveSyncEngine @Inject constructor(
         return result
     }
 
+    private suspend fun syncStandaloneSaves(
+        games: List<Game>,
+        folders: Map<String, SyncFolder>,
+        account: String,
+        device: String,
+        initial: SaveSyncResult,
+        batteryEnabled: Boolean,
+        statesEnabled: Boolean,
+        sameAccount: () -> Unit,
+        emulatorExited: (EsdeLaunch) -> Boolean,
+        watch: (Set<SyncWatchFolder>) -> Unit,
+    ): SaveSyncResult {
+        var result = initial
+        val subfolders = mutableSetOf<SyncWatchFolder>()
+        for (batch in games.chunked(100)) {
+            sameAccount()
+            val ids = batch.map { it.rom.id }
+            val batteryRows = if (batteryEnabled) saves.saveVersions(ids).groupBy { it.romId } else emptyMap()
+            val stateRows = if (statesEnabled) saves.stateVersions(ids).groupBy { it.romId } else emptyMap()
+            for (game in batch) {
+                val emulator = checkNotNull(game.launch.standalone)
+                val gameId = checkNotNull(game.standaloneId)
+                val packageName = checkNotNull(game.launch.packageName)
+                val stateTag = standaloneStateTag(packageName, emulator.id)
+                val batteryTag = "rms-${emulator.id}"
+                for (state in listOf(false, true)) {
+                    if (state && (!statesEnabled || stateTag == null) || !state && !batteryEnabled) continue
+                    val folder = folders[if (state) game.launch.states else game.launch.saves] ?: continue
+                    val tag = if (state) checkNotNull(stateTag) else batteryTag
+                    val rows = (if (state) stateRows else batteryRows)[game.rom.id].orEmpty()
+                    fun compatible(row: SaveSyncDetails): StandaloneAsset? {
+                        if (row.missing || row.emulator != tag) return null
+                        val path = standaloneCloudPath(row.fileName) ?: return null
+                        val asset = standaloneAsset(emulator, gameId, path, state) ?: return null
+                        return asset.takeIf { state || row.slot == asset.slot }
+                    }
+                    val history = rows.mapNotNull { row -> compatible(row)?.let { it to row } }.groupBy({ it.first }, { it.second })
+                    val localAssets = try {
+                        standaloneLocalAssets(emulator, gameId, folder, state)
+                    } catch (e: Exception) {
+                        log.w("SaveSync", "Could not read ${emulator.id} save directory", e)
+                        result = result.copy(failed = result.failed + 1)
+                        continue
+                    }
+                    for (asset in (localAssets + history.keys).distinct()) {
+                        val parent = asset.parts.dropLast(1).fold(folder) { base, name -> base.child(name) }
+                        val target = parent.file(asset.name)
+                        val directory = if (asset.directory) StandaloneDirectory(parent, asset.name) else null
+                        val versions = history[asset].orEmpty()
+                        val remote = versions.maxWithOrNull(standaloneRecency)
+                        val key = "$account:$device:${game.rom.id}:$tag:${asset.slot}"
+                        fun mayRestore(): Boolean = emulatorExited(game.launch)
+                        fun snapshotAsset(): Snapshot? {
+                            if (directory == null) return snapshot(target)
+                            val data = directory.snapshot() ?: return null
+                            return Snapshot(asset.name + ".zip", data, rommSaveArchiveHash(data), 0)
+                        }
+                        fun exists() = directory?.exists() ?: target.exists()
+                        fun checkPayload(bytes: ByteArray) {
+                            if (!state && emulator == StandaloneEmulator.DOLPHIN_GC) {
+                                check(bytes.size >= 64 && bytes.copyOfRange(0, 6).decodeToString() == gameId)
+                            }
+                            if (!state && emulator == StandaloneEmulator.DUCKSTATION) {
+                                check(bytes.size == 128 * 1024 && bytes[0] == 'M'.code.toByte() && bytes[1] == 'C'.code.toByte())
+                            }
+                            if (!state && emulator == StandaloneEmulator.PPSSPP) {
+                                val sfo = parseSaveArchive(bytes).firstOrNull { it.path == "PARAM.SFO" }?.data
+                                check(sfo != null && paramSfo(sfo)["SAVEDATA_DIRECTORY"] == asset.name) {
+                                    "PPSSPP save data does not identify this save directory."
+                                }
+                            }
+                        }
+                        try {
+                            sameAccount()
+                            directory?.recover(::mayRestore)
+                            parent.watchFolder()?.let(subfolders::add)
+                            if (directory != null) parent.child(asset.name).watchFolder()?.let(subfolders::add)
+                            val local = snapshotAsset()
+                            if (local == null && exists()) continue
+                            if (local != null) checkPayload(local.bytes)
+                            val remoteHash = remote?.let { row ->
+                                (row.hash ?: if (state) stateHash(row) else null)?.lowercase()
+                                    ?.takeIf(md5Pattern::matches) ?: error("RomM did not provide a valid save hash.")
+                            }
+                            val common = syncedVersions.getString(key, null)
+                            suspend fun unchangedRemote(): Boolean {
+                                sameAccount()
+                                val current = if (state) saves.stateVersions(listOf(game.rom.id)) else saves.history(game.rom.id)
+                                return current.filter { compatible(it) == asset }.maxWithOrNull(standaloneRecency) == remote
+                            }
+                            suspend fun readRemote(): Snapshot {
+                                sameAccount()
+                                val id = checkNotNull(remote).id
+                                val bytes = readSave(if (state) saves.downloadState(id) else saves.download(id, device, null))
+                                val hash = if (directory != null) rommSaveArchiveHash(bytes) else digest(bytes, "MD5")
+                                check(hash == remoteHash)
+                                checkPayload(bytes)
+                                return Snapshot(if (directory != null) asset.name + ".zip" else asset.name, bytes, hash, 0)
+                            }
+                            fun remember(hash: String) { syncedVersions.edit().putString(key, hash).apply() }
+                            when (saveTransfer(local?.hash, remoteHash, common, false)) {
+                                SaveTransfer.SKIP -> Unit
+                                SaveTransfer.MATCH -> {
+                                    val hash = checkNotNull(local).hash
+                                    if (!state && common != hash) {
+                                        saves.confirmDownload(checkNotNull(remote).id, SaveSyncConfirmation(device, hash))
+                                    }
+                                    remember(hash)
+                                }
+                                SaveTransfer.UPLOAD -> {
+                                    val version = checkNotNull(local)
+                                    if (!unchangedRemote() || snapshotAsset()?.hash != version.hash) continue
+                                    sameAccount()
+                                    val body = version.bytes.toRequestBody("application/octet-stream".toMediaType())
+                                    val uploaded = if (state) {
+                                        val name = asset.cloudName(java.util.UUID.randomUUID().toString())
+                                        saves.uploadState(game.rom.id, tag, MultipartBody.Part.createFormData("stateFile", name, body))
+                                    } else {
+                                        saves.upload(game.rom.id, device, null, asset.slot, tag, version.hash,
+                                            MultipartBody.Part.createFormData("saveFile", asset.cloudName(), body))
+                                    }
+                                    check((uploaded.hash ?: if (state) stateHash(uploaded) else null)
+                                        .equals(version.hash, ignoreCase = true))
+                                    remember(version.hash)
+                                    result = result.copy(uploaded = result.uploaded + 1)
+                                }
+                                SaveTransfer.DOWNLOAD -> {
+                                    if (!mayRestore()) {
+                                        result = result.copy(waitingForExit = result.waitingForExit + 1)
+                                        continue
+                                    }
+                                    val incoming = readRemote()
+                                    if (!unchangedRemote()) continue
+                                    sameAccount()
+                                    val restored = if (directory != null) {
+                                        local?.let { saveRecoveryCopy(account, game.rom.id, it, "previous") }
+                                        directory.replace(incoming.bytes) {
+                                            mayRestore() && if (local == null) !exists() else snapshotAsset()?.hash == local.hash
+                                        }
+                                    } else if (parent.gateway.ensureDir(parent.relative)) {
+                                        restoreFile(target, local?.hash, incoming, account, game.rom.id, ::mayRestore)
+                                    } else false
+                                    if (restored) {
+                                        if (!state) {
+                                            saves.confirmDownload(checkNotNull(remote).id, SaveSyncConfirmation(device, incoming.hash))
+                                        }
+                                        remember(incoming.hash)
+                                        result = result.copy(applied = result.applied + 1)
+                                    } else {
+                                        result = result.copy(waitingForExit = result.waitingForExit + 1)
+                                    }
+                                }
+                                SaveTransfer.CONFLICT -> {
+                                    local?.let { saveRecoveryCopy(account, game.rom.id, it, "local") }
+                                    remote?.let { saveRecoveryCopy(account, game.rom.id, readRemote(), "server") }
+                                    result = result.copy(conflicts = result.conflicts + 1)
+                                }
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.w("SaveSync", "Could not sync ${emulator.id} file for ROM ${game.rom.id}", e)
+                            result = result.copy(failed = result.failed + 1)
+                        }
+                    }
+                }
+            }
+        }
+        if (subfolders.isNotEmpty()) watch(subfolders)
+        return result
+    }
+
+    private fun standaloneStateTag(packageName: String, profile: String): String? {
+        val version = try {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(packageName, 0).let { "${it.versionCode}:${it.versionName}" }
+        } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+            return null
+        }
+        return "rms-$profile-${digest(version.encodeToByteArray(), "SHA-256").take(16)}"
+    }
+
+    private suspend fun syncCompatibleSaves(
+        games: List<Game>,
+        folders: Map<String, SyncFolder>,
+        filesByDirectory: Map<String, List<SyncFile>>,
+        account: String,
+        device: String,
+        initial: SaveSyncResult,
+        enabled: (String) -> Boolean,
+        sameAccount: () -> Unit,
+        mayRestore: (Game) -> Boolean,
+    ): SaveSyncResult {
+        var result = initial
+        for (batch in games.chunked(100)) {
+            sameAccount()
+            val romIds = batch.map { it.rom.id }
+            val saveRows = saves.saveVersions(romIds).groupBy { it.romId }
+            val stateRows = if (enabled(".state")) saves.stateVersions(romIds).groupBy { it.romId } else emptyMap()
+            for (game in batch) {
+                val core = rommSaveCore(game.core)
+                val knownSaves = saveRows[game.rom.id].orEmpty()
+                val knownStates = stateRows[game.rom.id].orEmpty()
+                val suffixes = setOfNotNull(game.launch.saves, game.launch.states)
+                    .flatMap { path -> filesByDirectory[path].orEmpty() }
+                    .mapNotNullTo(mutableSetOf()) { file ->
+                        if (!file.name.startsWith(game.stem)) return@mapNotNullTo null
+                        val suffix = file.name.removePrefix(game.stem)
+                        suffix.takeIf { isSaveSuffix(it) && game.destination(it) == file.folder.path }
+                    }
+                suffixes.addAll(listOf(".srm", ".sav", ".rtc"))
+                knownStates.mapNotNullTo(suffixes) { rommStateSuffix(it.fileName) }
+                knownSaves.mapNotNullTo(suffixes) { row ->
+                    row.slot?.takeIf { it.startsWith("${game.emulator}:") }
+                        ?.substringAfter(':')?.let { ".$it" }?.takeIf(::isSaveSuffix)
+                }
+
+                for (suffix in suffixes.filter(enabled)) {
+                    val target = folders[game.destination(suffix)]?.file(game.stem + suffix) ?: continue
+                    val state = suffix.startsWith(".state")
+                    val key = "$account:$device:${game.rom.id}:romm:$core:$suffix"
+                    val legacySlot = saveSlot(game.core, suffix)
+                    val legacyKey = "$account:$device:${game.rom.id}:$legacySlot"
+                    val common = syncedVersions.getString(key, null)
+                    val legacy = knownSaves.filter { !it.missing && it.slot == legacySlot && it.emulator == game.emulator }
+                    val legacyHead = if (suffix == ".srm") legacy.latestBatteryVersion() else
+                        legacy.maxWithOrNull(compareBy<SaveSyncDetails> { it.updatedAt }.thenBy { it.id })
+                    val history = rommSaveHistory(if (state) knownStates else knownSaves, game.stem, core, suffix)
+                    val canonicalHead = history.firstOrNull()
+                    val fromLegacy = canonicalHead == null && common == null && legacyHead != null
+                    val remote = canonicalHead ?: legacyHead.takeIf { fromLegacy }
+                    val baseline = common ?: syncedVersions.getString(legacyKey, null).takeIf { fromLegacy }
+                    try {
+                        sameAccount()
+                        val local = snapshot(target)
+                        if (local == null && target.exists()) continue
+                        val remoteHash = remote?.let { asset ->
+                            val hash = (asset.hash ?: if (state && !fromLegacy) stateHash(asset) else null)
+                                ?.lowercase()
+                            checkNotNull(hash) { "RomM did not provide a save hash." }
+                            check(md5Pattern.matches(hash)) { "Invalid RomM save content hash." }
+                            hash
+                        }
+                        val knownOlderBattery = suffix == ".srm" && (history + legacy).any { it.hash == local?.hash }
+                        var transfer = saveTransfer(local?.hash, remoteHash, baseline, knownOlderBattery)
+                        if (transfer == SaveTransfer.MATCH && fromLegacy) transfer = SaveTransfer.UPLOAD
+                        suspend fun unchangedRemote(): Boolean {
+                            sameAccount()
+                            val rows = if (state) saves.stateVersions(listOf(game.rom.id)) else saves.history(game.rom.id)
+                            val head = rommSaveHistory(rows, game.stem, core, suffix).firstOrNull()
+                            if (head?.id != canonicalHead?.id || head?.updatedAt != canonicalHead?.updatedAt ||
+                                head?.hash != canonicalHead?.hash) return false
+                            if (!fromLegacy) return true
+                            val freshLegacy = (if (state) saves.history(game.rom.id) else rows).filter {
+                                !it.missing && it.slot == legacySlot && it.emulator == game.emulator
+                            }
+                            val newest = if (suffix == ".srm") freshLegacy.latestBatteryVersion() else
+                                freshLegacy.maxWithOrNull(compareBy<SaveSyncDetails> { it.updatedAt }.thenBy { it.id })
+                            return newest?.id == legacyHead?.id && newest?.hash == legacyHead?.hash
+                        }
+                        suspend fun readRemote(): Snapshot {
+                            val asset = checkNotNull(remote)
+                            val body = if (state && !fromLegacy) saves.downloadState(asset.id) else saves.download(asset.id, device, null)
+                            val bytes = readSave(body)
+                            val hash = digest(bytes, "MD5")
+                            check(hash == remoteHash) { "RomM save hash did not match." }
+                            return Snapshot(target.name, bytes, hash, 0)
+                        }
+                        fun remember(hash: String) { syncedVersions.edit().putString(key, hash).apply() }
+
+                        when (transfer) {
+                            SaveTransfer.SKIP -> Unit
+                            SaveTransfer.MATCH -> {
+                                val hash = checkNotNull(local).hash
+                                if (common != hash && suffix == ".srm") {
+                                    saves.confirmDownload(checkNotNull(remote).id, SaveSyncConfirmation(device, hash))
+                                }
+                                remember(hash)
+                            }
+                            SaveTransfer.UPLOAD -> {
+                                val version = checkNotNull(local)
+                                if (!unchangedRemote()) continue
+                                if (remote != null && suffix in setOf(".sav", ".rtc") && !fromLegacy) {
+                                    saveRecoveryCopy(account, game.rom.id, readRemote(), "server")
+                                }
+                                sameAccount()
+                                if (snapshot(target)?.hash != version.hash) continue
+                                val body = version.bytes.toRequestBody("application/octet-stream".toMediaType())
+                                val saved = if (state) {
+                                    val name = stateVersionFileName(core, suffix)
+                                    saves.uploadState(game.rom.id, core, MultipartBody.Part.createFormData("stateFile", name, body))
+                                } else {
+                                    val slot = "autosave".takeIf { suffix == ".srm" }
+                                    val emulator = canonicalHead?.emulator?.takeIf { slot == null } ?: core
+                                    saves.upload(game.rom.id, device, null, slot, emulator, version.hash,
+                                        MultipartBody.Part.createFormData("saveFile", target.name, body))
+                                }
+                                val savedHash = saved.hash ?: if (state) stateHash(saved) else null
+                                check(savedHash.equals(version.hash, ignoreCase = true)) { "RomM did not confirm the uploaded save hash." }
+                                remember(version.hash)
+                                result = result.copy(uploaded = result.uploaded + 1)
+                            }
+                            SaveTransfer.DOWNLOAD -> {
+                                if (!mayRestore(game)) {
+                                    result = result.copy(waitingForExit = result.waitingForExit + 1)
+                                    continue
+                                }
+                                val incoming = readRemote()
+                                if (!unchangedRemote()) continue
+                                sameAccount()
+                                if (!restoreFile(target, local?.hash, incoming, account, game.rom.id) { mayRestore(game) }) {
+                                    result = result.copy(waitingForExit = result.waitingForExit + 1)
+                                    continue
+                                }
+                                if (!fromLegacy) {
+                                    if (suffix == ".srm") saves.confirmDownload(checkNotNull(remote).id, SaveSyncConfirmation(device, incoming.hash))
+                                    remember(incoming.hash)
+                                }
+                                result = result.copy(applied = result.applied + 1)
+                            }
+                            SaveTransfer.CONFLICT -> {
+                                local?.let { saveRecoveryCopy(account, game.rom.id, it, "local") }
+                                remote?.let { saveRecoveryCopy(account, game.rom.id, readRemote(), "server") }
+                                result = result.copy(conflicts = result.conflicts + 1)
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        log.w("SaveSync", "Could not sync $suffix for ROM ${game.rom.id}", e)
+                        result = if (e is ApiException && e.httpCode == 409) {
+                            snapshot(target)?.let { saveRecoveryCopy(account, game.rom.id, it, "local") }
+                            result.copy(conflicts = result.conflicts + 1)
+                        } else result.copy(failed = result.failed + 1)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private suspend fun stateHash(state: SaveSyncDetails): String {
+        val revision = state.updatedAt
+        val cached = stateHashes[state.id]
+        if (revision != null && cached?.first == revision) return cached.second
+        val hash = digest(readSave(saves.downloadState(state.id)), "MD5")
+        if (revision != null) stateHashes[state.id] = revision to hash
+        return hash
+    }
+
     private fun localVersionTime(account: String, romId: Int, slot: String, snapshot: Snapshot): Long {
         val key = "$account:$romId:$slot"
         val saved = saveVersions.getString(key, null)
@@ -440,9 +888,15 @@ class SaveSyncEngine @Inject constructor(
         return id
     }
 
-    private suspend fun loadCatalog(account: String, systems: Set<String>): Map<String, List<RomDto>> {
+    private suspend fun loadCatalog(
+        account: String,
+        systems: Set<String>,
+        standaloneSystems: Set<String>,
+    ): Map<String, List<RomDto>> {
         val now = System.currentTimeMillis()
-        catalog?.takeIf { it.account == account && it.systems == systems && now < it.expires }?.let { return it.roms }
+        catalog?.takeIf {
+            it.account == account && it.systems == systems && it.standaloneSystems == standaloneSystems && now < it.expires
+        }?.let { return it.roms }
         val platforms = api.platforms()
         val mapping = platformMap.load()
         val bySystem = systems.mapNotNull { system ->
@@ -456,18 +910,22 @@ class SaveSyncEngine @Inject constructor(
                 .takeIf { rows -> rows.map { it.slug }.distinct().size == 1 }.orEmpty()
             compatible.takeIf { it.isNotEmpty() }?.let { system to it.map { row -> row.id } }
         }.toMap()
+        val standalonePlatforms = standaloneSystems.flatMap { bySystem[it].orEmpty() }.toSet()
         val byPlatform = mutableMapOf<Int, List<RomDto>>()
         for (platform in bySystem.values.flatten().toSet()) {
             val entries = mutableListOf<RomDto>()
             do {
                 val page = api.roms(platformIds = listOf(platform), limit = 200, offset = entries.size,
-                    groupByMetaId = false, withCharIndex = false, withTotal = false).items
+                    groupByMetaId = false, withCharIndex = false, withTotal = false, withFiles = platform in standalonePlatforms).items
                 entries += page
             } while (page.size == 200)
-            byPlatform[platform] = entries.filter { !it.missingFromFs && it.hasSimpleSingleFile && !it.sha1Hash.isNullOrBlank() }
+            byPlatform[platform] = entries.filter {
+                !it.missingFromFs && !it.sha1Hash.isNullOrBlank() &&
+                    (it.hasSimpleSingleFile || (platform in standalonePlatforms && it.hasNestedSingleFile))
+            }
         }
         val result = bySystem.mapValues { (_, ids) -> ids.flatMap(byPlatform::getValue) }
-        catalog = Catalog(account, systems, now + 30 * 60_000, result)
+        catalog = Catalog(account, systems, standaloneSystems, now + 30 * 60_000, result)
         return result
     }
 
@@ -485,7 +943,9 @@ class SaveSyncEngine @Inject constructor(
                     val relative = prefix + entry.name
                     if (default.romExtensions.any { entry.name.endsWith(it, ignoreCase = true) }) {
                         val launch = overrides[relative] ?: default
-                        if (launch.core != null && (launch.saves != null || launch.states != null)) {
+                        if ((launch.isRetroArch && launch.core != null || launch.standalone != null) &&
+                            (launch.saves != null || launch.states != null)
+                        ) {
                             local += LocalRom(folder.file(entry.name), entry, launch)
                         }
                     } else if (entry.isDirectory) {
@@ -499,7 +959,9 @@ class SaveSyncEngine @Inject constructor(
             .groupingBy { it }.eachCount()
         val stateTargets = local.mapNotNull { it.launch.states?.let { folder -> folder to it.stem.lowercase() } }
             .groupingBy { it }.eachCount()
-        val byName = catalog.mapValues { (_, roms) -> roms.groupBy { it.fsName } }
+        val byName = catalog.mapValues { (_, roms) ->
+            roms.mapNotNull { rom -> syncRomFileName(rom)?.let { it to rom } }.groupBy({ it.first }, { it.second })
+        }
         return local.mapNotNull { (file, entry, launch) ->
             val stem = entry.name.substringBeforeLast('.')
             val name = stem.lowercase()
@@ -507,8 +969,19 @@ class SaveSyncEngine @Inject constructor(
                 (stateTargets[launch.states to name] ?: 0) > 1) return@mapNotNull null
             val options = byName[launch.system]?.get(entry.name) ?: return@mapNotNull null
             val sha1 = romHash(file, entry) ?: return@mapNotNull null
-            val rom = options.singleOrNull { it.sha1Hash.equals(sha1, ignoreCase = true) } ?: return@mapNotNull null
-            Game(rom, stem, launch)
+            val emulator = launch.standalone
+            val rom = options.singleOrNull {
+                (emulator != null || it.hasSimpleSingleFile) && it.sha1Hash.equals(sha1, ignoreCase = true)
+            } ?: return@mapNotNull null
+            val id = if (emulator == null) null else {
+                val override = gameIdOverride(emulator.id, sha1)
+                emulator.normalizeGameId(override.orEmpty()) ?: runCatching {
+                    standaloneGameId(emulator, entry.name.substringAfterLast('.').lowercase()) { offset, size ->
+                        if (offset >= 0 && offset + size <= entry.sizeBytes) file.open()?.use { it.readAt(offset, size) } else null
+                    }
+                }.getOrNull() ?: rom.titleId?.let(emulator::normalizeGameId) ?: return@mapNotNull null
+            }
+            Game(rom, stem, launch, id)
         }
     }
 
@@ -539,19 +1012,7 @@ class SaveSyncEngine @Inject constructor(
         val id = checkNotNull(operation.saveId)
         val file = File(dir, "$id-$hash")
         if (snapshot(file)?.hash == hash) return file
-        val bytes = saves.download(id, device, session).use { body ->
-            body.byteStream().use { input ->
-                val result = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    check(result.size() + count <= MAX_SAVE_BYTES) { "Save exceeds the local sync size limit." }
-                    result.write(buffer, 0, count)
-                }
-                result.toByteArray()
-            }
-        }
+        val bytes = readSave(saves.download(id, device, session))
         check(bytes.isNotEmpty() && digest(bytes, "MD5") == hash) { "RomM save hash did not match." }
         dir.mkdirs()
         writeAtomically(file, bytes)
@@ -569,13 +1030,26 @@ class SaveSyncEngine @Inject constructor(
     ): Boolean {
         val incoming = checkNotNull(snapshot(staged))
         check(incoming.hash.equals(operation.hash, ignoreCase = true))
+        if (!restoreFile(target, previous?.hash, incoming, account, operation.romId, mayWrite)) return false
+        saves.confirmDownload(checkNotNull(operation.saveId), SaveSyncConfirmation(device, incoming.hash))
+        return true
+    }
+
+    private suspend fun restoreFile(
+        target: SyncFile,
+        previous: String?,
+        incoming: Snapshot,
+        account: String,
+        romId: Int,
+        mayWrite: () -> Boolean,
+    ): Boolean {
         val current = snapshot(target)
-        check(if (previous == null) !target.exists() else current?.hash == previous.hash) {
+        check(if (previous == null) !target.exists() else current?.hash == previous) {
             "The local save changed while sync was running."
         }
-        if (current != null) saveRecoveryCopy(account, operation.romId, current, "previous")
+        if (current != null) saveRecoveryCopy(account, romId, current, "previous")
         if (!target.replace(incoming.bytes) {
-                mayWrite() && if (previous == null) !target.exists() else snapshot(target)?.hash == previous.hash
+                mayWrite() && if (previous == null) !target.exists() else snapshot(target)?.hash == previous
             }) return false
         // Shared storage can return stale metadata immediately after the atomic rename.
         repeat(5) { attempt ->
@@ -584,13 +1058,24 @@ class SaveSyncEngine @Inject constructor(
                     incoming.bytes.all { input.read() == (it.toInt() and 0xff) } && input.read() == -1
                 }
             }.getOrNull() == true
-            if (matches) {
-                saves.confirmDownload(checkNotNull(operation.saveId), SaveSyncConfirmation(device, incoming.hash))
-                return true
-            }
+            if (matches) return true
             if (attempt < 4) delay(100)
         }
         error("Could not verify the restored save on shared storage.")
+    }
+}
+
+private fun readSave(body: ResponseBody): ByteArray = body.use {
+    it.byteStream().use { input ->
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            check(output.size() + count <= MAX_SAVE_BYTES) { "Save exceeds the local sync size limit." }
+            output.write(buffer, 0, count)
+        }
+        output.toByteArray().also { bytes -> check(bytes.isNotEmpty()) { "RomM returned an empty save." } }
     }
 }
 
@@ -647,7 +1132,7 @@ internal fun writeAtomically(file: File, data: ByteArray) {
     }
 }
 
-private fun digest(data: ByteArray, algorithm: String): String =
+internal fun digest(data: ByteArray, algorithm: String): String =
     MessageDigest.getInstance(algorithm).digest(data).hex()
 
 private fun ByteArray.hex() = joinToString("") { "%02x".format(it) }

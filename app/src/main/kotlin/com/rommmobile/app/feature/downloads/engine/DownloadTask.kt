@@ -2,14 +2,15 @@ package com.rommmobile.app.feature.downloads.engine
 
 import android.content.Context
 import android.os.StatFs
-import com.rommmobile.app.core.storage.DirectFileGateway
 import com.rommmobile.app.core.storage.FileGateway
+import com.rommmobile.app.core.storage.FileGatewayFactory
 import com.rommmobile.app.core.network.ServerStore
 import com.rommmobile.app.core.network.UrlNormalizer
 import com.rommmobile.app.core.storage.StorageRoot
 import com.rommmobile.app.core.util.FileLogger
 import com.rommmobile.app.data.db.DownloadDao
 import com.rommmobile.app.data.db.DownloadEntity
+import com.rommmobile.app.data.db.DownloadKind
 import com.rommmobile.app.data.db.DownloadState
 import com.rommmobile.app.data.mapping.MappingRepository
 import com.rommmobile.app.data.repo.LocalLibraryRepository
@@ -218,9 +219,8 @@ class DownloadTask(
                 return TaskOutcome.Failed("hash_mismatch", retryable = true)
             }
         }
-        // Firmware targets carry an absolute file path ("abs:/…/RetroArch/system/bios.bin");
-        // gatewayFor() already rooted the gateway at its directory, so nothing is relative here.
-        val relDir = if (entity.targetRelDir.startsWith("abs:")) "" else entity.targetRelDir
+        val firmware = entity.kind == DownloadKind.FIRMWARE
+        val relDir = if (firmware) "" else entity.targetRelDir
         if (!gateway.ensureDir(relDir)) return TaskOutcome.Failed("cannot_create_dir", retryable = false)
 
         val extract = entity.extract && (Extractor.isZip(entity.fileName) || Extractor.is7z(entity.fileName))
@@ -261,17 +261,21 @@ class DownloadTask(
             dao.setState(entity.id, DownloadState.MOVING)
             publish(DownloadProgress(entity.id, entity.totalBytes, entity.totalBytes, 0, DownloadState.MOVING))
             val expected = part.length()
-            if (!gateway.moveIn(part, relDir, entity.fileName)) return TaskOutcome.Failed("move_failed", retryable = true)
-            val actual = gateway.sizeOf(relDir, entity.fileName)
-            if (actual != expected) {
-                gateway.delete(relDir, entity.fileName)
-                return TaskOutcome.Failed("move_size_mismatch", retryable = true)
+            if (firmware) {
+                if (!publishFirmware(gateway, part, entity.fileName, entity.id)) return TaskOutcome.Failed("move_failed", retryable = true)
+            } else {
+                if (!gateway.moveIn(part, relDir, entity.fileName)) return TaskOutcome.Failed("move_failed", retryable = true)
+                val actual = gateway.sizeOf(relDir, entity.fileName)
+                if (actual != expected) {
+                    gateway.delete(relDir, entity.fileName)
+                    return TaskOutcome.Failed("move_size_mismatch", retryable = true)
+                }
+                localLibrary.registerDownloaded(entity.platformSlug, joinRel(relDir, entity.fileName), entity.fileName, actual, false)
+                if (relDir.contains('/')) {
+                    localLibrary.registerDownloaded(entity.platformSlug, relDir, relDir.substringAfterLast('/'), 0, true)
+                }
             }
             resultPath = gateway.displayPath(relDir) + "/" + entity.fileName
-            localLibrary.registerDownloaded(entity.platformSlug, joinRel(relDir, entity.fileName), entity.fileName, actual, false)
-            if (relDir.contains('/')) {
-                localLibrary.registerDownloaded(entity.platformSlug, relDir, relDir.substringAfterLast('/'), 0, true)
-            }
         }
         dao.complete(entity.id, resultPath)
         publish(DownloadProgress(entity.id, entity.totalBytes, entity.totalBytes, 0, DownloadState.COMPLETED))
@@ -280,11 +284,12 @@ class DownloadTask(
     }
 
     private suspend fun gatewayFor(entity: DownloadEntity): FileGateway? {
-        if (entity.targetRelDir.startsWith("abs:")) {
-            // Firmware target outside the ROM root (RetroArch/system): plain path only.
-            return DirectFileGateway(StorageRoot.Direct(entity.targetRelDir.removePrefix("abs:").substringBeforeLast('/')))
-        }
-        return mapping.gateway()
+        if (entity.kind != DownloadKind.FIRMWARE) return mapping.gateway()
+        val target = entity.targetRelDir
+        val root = if (target.startsWith("abs:")) {
+            StorageRoot.Direct(target.removePrefix("abs:").substringBeforeLast('/'))
+        } else StorageRoot.parse(target)
+        return root?.let { FileGatewayFactory.create(context, it) }
     }
 
     private fun partFile(id: Long): File = File(context.cacheDir, "downloads").apply { mkdirs() }.let { File(it, "$id.part") }
@@ -356,5 +361,20 @@ class DownloadTask(
             value = samples.take(n).sum() / n
             return value
         }
+    }
+}
+
+internal fun publishFirmware(gateway: FileGateway, part: File, name: String, downloadId: Long): Boolean {
+    if (gateway.exists("", name)) {
+        part.delete()
+        return true
+    }
+    val staging = ".romm-firmware-$downloadId.tmp"
+    try {
+        val expected = part.length()
+        if (!gateway.moveIn(part, staging, name) || gateway.sizeOf(staging, name) != expected) return false
+        return gateway.moveWithin(staging, name, "") || gateway.exists("", name)
+    } finally {
+        gateway.delete("", staging)
     }
 }

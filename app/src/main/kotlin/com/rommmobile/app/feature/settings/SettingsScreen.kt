@@ -1,5 +1,8 @@
 package com.rommmobile.app.feature.settings
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +18,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,7 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -48,6 +56,7 @@ import com.rommmobile.app.core.input.rightStickScroll
 import com.rommmobile.app.core.network.ApiException
 import com.rommmobile.app.core.network.ServerConfig
 import com.rommmobile.app.core.network.ServerStore
+import com.rommmobile.app.core.storage.StorageLocations
 import com.rommmobile.app.core.storage.StorageRoot
 import com.rommmobile.app.data.mapping.MappingRepository
 import com.rommmobile.app.data.prefs.Launcher
@@ -98,7 +107,7 @@ class SettingsViewModel @Inject constructor(
     fun setExtract7z(v: Boolean) = viewModelScope.launch { store.setAutoExtract7z(v) }
     fun setMargin(v: Int) = viewModelScope.launch { store.setScreenMargin(v) }
     fun setTheme(v: ThemeMode) = viewModelScope.launch { store.setThemeMode(v) }
-    fun setBiosPath(v: String?) = viewModelScope.launch { store.setBiosPath(v) }
+    fun setBiosFolder(folder: StorageRoot?) = viewModelScope.launch { store.setBiosFolder(folder) }
     fun setAllowInsecure(v: Boolean) = viewModelScope.launch { store.setAllowInsecureRemote(v) }
     fun setRemoteUrl(v: String?) = viewModelScope.launch { serverStore.setRemoteUrl(v?.let { com.rommmobile.app.core.network.UrlNormalizer.normalize(it) }) }
     fun setCloudflare(id: String?, secret: String?) = viewModelScope.launch { serverStore.setCloudflareAccess(id, secret) }
@@ -128,11 +137,36 @@ fun SettingsScreen(
     val server by vm.server.collectAsStateWithLifecycle()
     val session by vm.session.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val colors = RommTheme.colors
     val layout = RommTheme.layout
     val scroll = rememberScrollState()
 
     var dialog by remember { mutableStateOf<String?>(null) }
+    var restorePrivacyFocus by remember { mutableStateOf(false) }
+    val privacyFocus = remember { FocusRequester() }
+    if (dialog == "privacy") {
+        PrivacyPolicyScreen(onBack = {
+            restorePrivacyFocus = true
+            dialog = null
+        })
+        return
+    }
+    LaunchedEffect(restorePrivacyFocus) {
+        if (restorePrivacyFocus) {
+            privacyFocus.requestFocus()
+            restorePrivacyFocus = false
+        }
+    }
+    val canPickBios = remember { StorageLocations.canOpenTree(context) }
+    val biosPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null && StorageLocations.persistTree(context, uri)) {
+            vm.setBiosFolder(StorageRoot.Saf(uri.toString()))
+            dialog = null
+        } else if (uri != null) {
+            Toast.makeText(context, R.string.bios_choose_folder, Toast.LENGTH_LONG).show()
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         RommTopBar(title = stringResource(R.string.section_settings), onBack = onBack)
@@ -144,7 +178,9 @@ fun SettingsScreen(
             SettingRow(stringResource(R.string.settings_cf_access), subtitle = if (server.cfClientId.isNullOrBlank()) stringResource(R.string.settings_not_set) else server.cfClientId, onClick = { dialog = "cf" })
             val user = (session as? Session.LoggedIn)
             SettingRow(stringResource(R.string.settings_account), subtitle = user?.let { "${it.username ?: "?"} · ${it.mode.name.lowercase()}" } ?: stringResource(R.string.settings_logged_out), onClick = { dialog = "logout" })
-            SwitchRow(stringResource(R.string.settings_allow_insecure), s.allowInsecureRemote, vm::setAllowInsecure, subtitle = stringResource(R.string.settings_allow_insecure_hint))
+            if (BuildConfig.DIRECT_HTTP_AVAILABLE) {
+                SwitchRow(stringResource(R.string.settings_allow_insecure), s.allowInsecureRemote, vm::setAllowInsecure, subtitle = stringResource(R.string.settings_allow_insecure_hint))
+            }
 
             SectionHeader(stringResource(R.string.settings_launcher_folders))
             SettingRow(stringResource(R.string.settings_launcher), subtitle = launcherLabel(s.launcher), onClick = { dialog = "launcher" })
@@ -152,8 +188,8 @@ fun SettingsScreen(
             SettingRow(stringResource(R.string.settings_mappings), subtitle = stringResource(R.string.settings_mappings_hint), onClick = onOpenMappings)
             SettingRow(stringResource(R.string.settings_local_library), subtitle = stringResource(R.string.settings_local_library_hint), onClick = onOpenLocalLibrary)
             SettingRow(stringResource(R.string.settings_rescan), subtitle = stringResource(R.string.settings_rescan_hint), onClick = { vm.rescan() })
-            SettingRow(stringResource(R.string.settings_bios), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = onOpenFirmware)
-            SettingRow(stringResource(R.string.settings_bios_path), subtitle = s.biosPath ?: stringResource(R.string.settings_bios_default), onClick = { dialog = "bios" })
+            SettingRow(stringResource(R.string.settings_bios), onClick = onOpenFirmware)
+            SettingRow(stringResource(R.string.settings_bios_path), subtitle = s.firmwareRoot?.displayName ?: stringResource(R.string.bios_choose_folder), onClick = { dialog = "bios" })
 
             SettingRow(stringResource(R.string.settings_save_sync), subtitle = stringResource(R.string.settings_save_sync_hint), onClick = onOpenSaveSync)
 
@@ -178,6 +214,18 @@ fun SettingsScreen(
             SectionHeader(stringResource(R.string.settings_advanced))
             SettingRow(stringResource(R.string.settings_diagnostics), subtitle = stringResource(R.string.settings_diagnostics_hint), onClick = onOpenDiagnostics)
             SettingRow(stringResource(R.string.settings_rerun_onboarding), onClick = { dialog = "rerun" })
+            SettingRow(
+                stringResource(R.string.settings_privacy_policy),
+                modifier = Modifier.focusRequester(privacyFocus),
+                onClick = {
+                    if (layout.isTv) {
+                        dialog = "privacy"
+                    } else {
+                        runCatching { uriHandler.openUri(PRIVACY_POLICY_URL) }
+                            .onFailure { Toast.makeText(context, R.string.error_no_browser, Toast.LENGTH_LONG).show() }
+                    }
+                },
+            )
             SettingRow(stringResource(R.string.settings_version), subtitle = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             Spacer(Modifier.height(24.dp))
         }
@@ -202,7 +250,33 @@ fun SettingsScreen(
             onDismiss = { dialog = null },
         ) { i -> vm.setLauncher(Launcher.entries[i]); dialog = null }
         "root" -> RootChooserDialog(preferredNames = vm.rootNames, onChosen = { vm.setRoot(it); dialog = null }, onDismiss = { dialog = null })
-        "bios" -> TextInputDialog(stringResource(R.string.settings_bios_path), s.biosPath.orEmpty(), hint = "/storage/emulated/0/RetroArch/system", onDismiss = { dialog = null }) { vm.setBiosPath(it.ifBlank { null }); dialog = null }
+        "bios" -> RommDialog(
+            onDismissRequest = { dialog = null },
+            title = stringResource(R.string.settings_bios_path),
+            confirmText = stringResource(if (canPickBios) R.string.root_pick_saf else R.string.action_close),
+            onConfirm = { if (canPickBios) biosPicker.launch(null) else dialog = null },
+        ) {
+            Column {
+                Text(stringResource(if (canPickBios) R.string.bios_choose_folder else R.string.root_picker_required))
+                if (BuildConfig.ALL_FILES_ACCESS_AVAILABLE && StorageLocations.hasAllFilesAccess(context)) {
+                    TextButton(onClick = { dialog = "bios_path" }) { Text(stringResource(R.string.action_use_path)) }
+                }
+                if (s.biosFolder != null && s.storageRoot is StorageRoot.Direct) {
+                    TextButton(onClick = { vm.setBiosFolder(null); dialog = null }) {
+                        Text(stringResource(R.string.settings_bios_default))
+                    }
+                }
+            }
+        }
+        "bios_path" -> TextInputDialog(
+            stringResource(R.string.settings_bios_path),
+            (s.biosFolder as? StorageRoot.Direct)?.path.orEmpty(),
+            hint = "/storage/emulated/0/RetroArch/system",
+            onDismiss = { dialog = null },
+        ) { path ->
+            vm.setBiosFolder(path.takeIf { it.isNotBlank() }?.let { StorageRoot.Direct(it) })
+            dialog = null
+        }
         "concurrency" -> ChoiceDialog(stringResource(R.string.settings_concurrency), (1..5).map { it.toString() to null }, s.concurrency - 1, onDismiss = { dialog = null }) { vm.setConcurrency(it + 1); dialog = null }
         "margin" -> ChoiceDialog(stringResource(R.string.settings_margin), listOf(0, 4, 8, 12, 16).map { "$it dp" to null }, listOf(0, 4, 8, 12, 16).indexOf(s.screenMarginDp).coerceAtLeast(0), onDismiss = { dialog = null }) { vm.setMargin(listOf(0, 4, 8, 12, 16)[it]); dialog = null }
         "theme" -> ChoiceDialog(stringResource(R.string.settings_theme), ThemeMode.entries.map { themeLabel(it) to null }, ThemeMode.entries.indexOf(s.themeMode), onDismiss = { dialog = null }) { vm.setTheme(ThemeMode.entries[it]); dialog = null }

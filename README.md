@@ -1,19 +1,20 @@
 # RomMMobileS
 
-RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopapera/RomMMobile) for Android handhelds. Browse your [RomM](https://romm.app) library and download games into the folders your frontend uses. With ES-DE and RetroArch, you can also sync in-game battery saves and emulator save states between devices through your RomM server.
+RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopapera/RomMMobile) for Android handhelds and Android TV. Browse your [RomM](https://romm.app) library and download games into the folders your frontend uses. With ES-DE, you can sync battery saves and save states for RetroArch and supported standalone emulators.
 
-**[Download RomMMobileS 1.0.3 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/rommmobiles-v1.0.3/RomMMobileS-1.0.3.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/rommmobiles-v1.0.3)
+**[Download RomMMobileS 1.0.5 APK](https://github.com/mriverodorta/RomMMobileS/releases/download/rommmobiles-v1.0.5/RomMMobileS-1.0.5.apk)** · [Release notes and SHA-256 checksum](https://github.com/mriverodorta/RomMMobileS/releases/tag/rommmobiles-v1.0.5) · [Privacy policy](https://mriverodorta.github.io/RomMMobileS/privacy/)
 
 🇮🇹 [Original upstream README in Italian](README.it-IT.md)
 
 ## What it does
 
-- **Background save sync**: watches RetroArch folders identified from ES-DE configuration. Sync battery saves and save states independently.
+- **Background save sync**: uses ES-DE configuration to identify the emulator and watch its save folders. Sync battery saves and save states independently.
+- **RetroArch WebDAV compatibility**: on RomM 5.4 or newer, the companion stores RetroArch saves and states in RomM's WebDAV-compatible layout. Devices can also sync directly from RetroArch.
 - **Platforms, collections, search**: your RomM library as it is on the server, with covers, regions, alternate versions and an alphabet rail to jump to a letter.
 - **Installed**: what is actually on the SD card, per platform, with space used, multi-select and uninstall. The SD card never lies, unlike Stan selling used ships.
 - **Download queue**: resume after interruption, hash verification, zip extraction, one folder per game on disc-based systems, progress notification. No partial file ever lands in the frontend's folders. Not even if LeChuck pulls the plug.
 - **Automatic folder mapping**: finds the folders your launcher already has and writes into them; if something is missing, it asks once.
-- **Firmware and BIOS** from the server, downloaded into RetroArch's system folder.
+- **Firmware and BIOS** from the server, downloaded into the folder you choose, such as RetroArch's system folder.
 - **Gamepad first**: focus always visible, pixel-art button hints, right-stick scrolling, shortcuts for sections and the queue.
 - **LAN and remote**: a home address and a public one (Cloudflare Access supported), picked automatically depending on where you are.
 - Dark and light theme, English and Italian, layouts for 4:3 screens, square screens, phones, tablets and TV.
@@ -21,8 +22,8 @@ RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopaper
 ## Requirements
 
 - A **RomM 5.x** server reachable from the device.
-- **Android 8.0** (API 26) or later. Tested on the Retroid Pocket Classic; the layout is also designed for the RG Cube, Retroid Pocket 5, Odin 2, phones, tablets and Android TV. Not tested on a pirate ship, but Wi-Fi on the open sea is terrible anyway.
-- A frontend already installed: ES-DE, Cocoon, Daijishō, Beacon, iiSU, Pegasus, or a custom folder layout.
+- **Android 8.0** (API 26) or later. Tested on the Retroid Pocket Classic and Anbernic RG476H. Android TV supports remote navigation.
+- To download games, choose a folder used by ES-DE, Cocoon, Daijishō, Beacon, iiSU, Pegasus, or a custom layout. Companion save sync uses ES-DE to detect the active emulator.
 
 ## Install
 
@@ -38,21 +39,45 @@ RomMMobileS is an independent fork of [RomMMobile](https://github.com/pippopaper
 
 Everything can be changed later from **Settings**.
 
+The GitHub APK supports HTTPS and local HTTP. It offers **All Files Access** as an option. The separate Google Play build requires HTTPS and uses Android's folder picker.
+
 ## Set up automatic save and state sync
 
 Repeat these steps on each handheld. Use the same RomM account and the same ROM files from your RomM library on both devices. Sync matches each ROM by filename and SHA-1 within its platform. Save sync was tested with RomM 5.4.1, ES-DE, and RetroArch on the Retroid Pocket Classic and Anbernic RG476H.
 
 1. Sign in to RomM. If you sign in with a QR or device code, approve the requested sync permissions in RomM.
 2. Select **ES-DE** as your frontend and choose the ROM folder that ES-DE uses.
-3. Open **Settings → Saves and States Sync**. Under **ES-DE data folder**, select the folder that contains ES-DE's settings and gamelists if the app asks for it. The app reads those settings to identify the configured emulator and core.
-4. Select **Choose RetroArch folder** and grant access to the shared folder that contains RetroArch's saves and states. Review the detected folders and use the folder picker to correct them as needed. If RetroArch writes into an Android-protected directory, change its **Settings → Directory → Save Files** and **Save States** to folders in shared storage.
-5. Enable **Background save sync**. Leave **Sync battery saves** on for in-game progress. Enable **Sync save states** if you also want emulator snapshots.
+3. Open **Settings → Saves and States Sync** and select **RomMMobileS background sync** under **Sync method**. Under **ES-DE data folder**, select the folder that contains ES-DE's settings and gamelists if the app asks for it. The app reads those settings to identify the configured emulator and core.
+4. Select **Choose emulator folder** and grant access to the shared folder that contains RetroArch's saves and states. Review the detected folders and use the folder picker to correct them as needed. If RetroArch writes into an Android-protected directory, change its **Settings → Directory → Save Files** and **Save States** to folders in shared storage.
+5. Leave **Sync battery saves** on for in-game progress. Enable **Sync save states** if you also want emulator snapshots.
 6. Open **Usage Access for automatic restore** and grant RomMMobileS Usage Access in Android settings. RomMMobileS can recognize a clean exit from RetroArch's automatic state or its per-core runtime log. Grant access to the shared RetroArch folder if you use the folder picker and want the app to read the runtime logs. In RetroArch, enable **Auto Load State** if you want it to resume the automatic state when you launch a game.
 7. Save in-game or create a state, then quit RetroArch normally. Give the receiving handheld time to complete a background scan before launching the game. Check **Sync now** in RomMMobileS for the folder count, linked ROM count, and latest results.
 
-Android's folder picker is the default. **All Files Access** is optional and lets the app watch shared folders directly where Android permits it. If Android stops background sync, select **Battery optimization** and set the app's battery use to **Unrestricted** where available.
+Android's folder picker is the default. To watch shared folders directly, open **Settings → Saves and States Sync → All Files Access (optional)**. Devices without a folder picker also offer this option when choosing a ROM folder. If Android stops background sync, select **Battery optimization** and set the app's battery use to **Unrestricted** where available.
 
 Save-state compatibility depends on the RetroArch core build. If a state fails to load, start the game and resume from its in-game battery save. If both devices change the same save offline, use **Export save recovery copies** to keep a ZIP before choosing which copy to restore.
+
+### Sync standalone emulators
+
+On RomM 5.4 or newer, background sync supports DuckStation, Dolphin (GameCube and Wii), Lime3DS, and PPSSPP. Set the emulator in ES-DE, then confirm its detected folders or select the active folders under **Settings → Saves and States Sync → Emulator save folders**. RomMMobileS needs read and write access. If Android blocks the current location, choose a shared folder in the emulator when its version supports changing the location.
+
+Use per-game serial memory cards in DuckStation and GCI folders for Dolphin GameCube. For Wii saves, select the active `Wii/title/00010000` folder. For Lime3DS saves, select the active `title/00040000` folder under its emulated SD card. For PPSSPP, select `SAVEDATA` and `PPSSPP_STATE` under its active Memory Stick. If the game ID is unavailable from the matched ROM or RomM, enter the ID from the emulator under **Standalone save game ID** on the game's detail screen.
+
+If Dolphin stores its files under Android's app-specific storage, choose **Dolphin Emulator** in the system folder picker. Grant `GC` for GameCube saves, `Wii/title/00010000` for Wii saves, and `StateSaves` for states.
+
+Use matching standalone emulator builds for save states. Each synced file or save directory can use up to 32 MiB. After an emulator has run, automatic restore waits until Android marks it stopped. After saving and quitting, use Android's **Force stop**, or confirm **Apply downloaded saves and states** in RomMMobileS after closing the emulator completely.
+
+To use RetroArch Cloud Sync on the same device, leave **RomMMobileS background sync** on and enable **Exclude RetroArch**. The companion then watches standalone emulators and shows the RetroArch WebDAV setup.
+
+### Sync directly from RetroArch
+
+RetroArch 1.22 or newer with WebDAV support can sync to RomM 5.4 or newer independently of the companion app. Configure only one sync method for RetroArch on each device. In RomMMobileS, select **RetroArch Cloud Sync** under **Settings → Saves and States Sync → Sync method** to stop the companion's watcher and see the address.
+
+1. Open **Settings → Saving → Cloud Sync** in RetroArch. Choose **WebDAV** and use `https://your-romm-server/api/sync/retroarch/` with your RomM username and password.
+2. Enable saves and automatic sync. Leave destructive sync and configuration sync off. Sort saves and states by core and keep **Write Saves to Content Directory** and **Write Save States to Content Directory** off.
+3. Use the same ROM filenames on both devices. Wait for RetroArch to finish syncing before loading a game. [RomM's RetroArch Cloud Sync guide](https://docs.romm.app/5.4.0/ecosystem/retroarch-cloud-sync/)
+
+On TVs without a system folder picker, choose **Continue without a ROM folder** during setup to browse the library and configure RetroArch Cloud Sync. ROM downloads require a writable ROM folder. The GitHub APK also lets you opt into **All Files Access** where Android offers it.
 
 ## Gamepad controls
 
@@ -93,19 +118,23 @@ The reading order is the number order, like the three trials to become a pirate.
 
 ## Building from source
 
-Check out the [release source tag](https://github.com/mriverodorta/RomMMobileS/tree/rommmobiles-v1.0.3) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
+Check out the [release source tag](https://github.com/mriverodorta/RomMMobileS/tree/rommmobiles-v1.0.5) to build the published version. You need JDK 17 and the Android SDK with platform 37 (`setup-android-sdk.ps1` fetches it on Windows). The Gradle wrapper is included.
 
 ```bash
-./gradlew :app:assembleRelease
+bash gradlew :app:assembleRelease
 ```
 
 The release APK lands in `app/build/outputs/apk/release/`. This Gradle command builds an unsigned APK. Use the signed APK from GitHub for installation and updates.
+
+Run `bash gradlew :app:bundlePlayRelease` to build the unsigned Google Play bundle. The Play build requires HTTPS and uses Android’s folder picker for storage access.
+
+For a dedicated Android TV track, run `bash gradlew :app:bundlePlayRelease -PrommmobilesTvOnly=true`. This bundle requires Android TV’s Leanback feature. Use a unique Play version code for each uploaded bundle.
 
 Stack: Kotlin 2.3, Jetpack Compose, Hilt, Room, Paging 3, DataStore, Coil 3, OkHttp/Retrofit, WorkManager. Android Gradle Plugin 9.4, Gradle 9.7.
 
 ## Status
 
-Version **1.0.3** is the first stable release of RomMMobileS. Background save sync supports ES-DE with RetroArch. See the release notes for the tested devices, sync requirements, and upgrade instructions.
+Version **1.0.5** is the current GitHub release. See the release notes for the save sync changes and upgrade instructions.
 
 Bug reports and ideas: open an issue on this repository. If you see a three-headed monkey behind you, attach a screenshot.
 

@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="save_sync_choose_emulator_folder">Choose RetroArch folder</string>
-    <string name="save_sync_choose_emulator_folder_hint">Grant access to the shared RetroArch folder for its saves and states.</string>
+    <string name="standalone_save_game_id">Standalone save game ID</string>
+    <string name="standalone_save_game_id_label">Game ID</string>
+    <string name="standalone_save_game_id_hint">Use the ID shown by the emulator for this ROM. Leave blank to read the ID from supported ROM formats automatically.</string>
+    <string name="standalone_save_game_id_apply">Save game ID</string>
+    <string name="standalone_save_folder_hint">Choose the active save and state folders in shared storage. Standalone states sync between matching emulator builds.</string>
+    <string name="standalone_use_detected_saves">Use detected saves</string>
+    <string name="standalone_use_detected_states">Use detected states</string>
+    <string name="standalone_save_folder_unselected">Choose a folder to begin syncing this emulator.</string>
+    <string name="save_sync_choose_emulator_folder">Choose emulator folder</string>
+    <string name="save_sync_choose_emulator_folder_hint">Grant access to a shared folder that contains saves or states.</string>
     <string name="save_sync_broad_storage">All Files Access (optional)</string>
     <string name="app_name">RomMMobileS</string>
 
@@ -55,6 +63,7 @@
     <string name="error_offline">Cannot reach the server. Check the connection and the address.</string>
     <string name="error_tls">Secure connection failed. The certificate is not trusted by this device.</string>
     <string name="error_cleartext_blocked">Plain HTTP towards the internet is blocked. Use HTTPS or allow it in Settings → Advanced.</string>
+    <string name="error_https_required">Use an HTTPS address. An HTTPS reverse proxy can connect to a RomM server that runs on HTTP.</string>
     <string name="error_server">Server error %1$d. %2$s</string>
     <string name="error_parse">Unexpected data from the server. Update RomM or report the issue with the log.</string>
     <string name="error_cancelled">Cancelled.</string>
@@ -92,6 +101,7 @@
     <string name="toast_enqueued">→ %s</string>
     <string name="toast_already_queued">Already in the queue</string>
     <string name="toast_no_root">No ROM folder chosen. Set it in Settings.</string>
+    <string name="download_no_tv_folder_picker">Downloads are unavailable because this TV has no system folder picker. You can still browse your RomM library and use RetroArch Cloud Sync.</string>
     <string name="toast_folder_create_failed">Could not create the folder</string>
 
     <!-- game detail -->
@@ -180,6 +190,8 @@
     <string name="settings_bios">BIOS / firmware</string>
     <string name="settings_bios_default">RetroArch/system next to the ROM folder</string>
     <string name="settings_bios_path">BIOS folder</string>
+    <string name="settings_privacy_policy">Privacy policy</string>
+    <string name="error_no_browser">Install a browser to open the privacy policy.</string>
     <string name="settings_downloads">Downloads</string>
     <string name="settings_concurrency">Parallel downloads</string>
     <string name="settings_wifi_only">Wi-Fi only</string>
@@ -200,6 +212,20 @@
     <string name="settings_advanced">Advanced</string>
     <string name="settings_save_sync">Saves and States Sync</string>
     <string name="settings_save_sync_hint">Background sync, emulator folders and restore</string>
+    <string name="save_sync_method">Sync method</string>
+    <string name="save_sync_method_rommmobiles">RomMMobileS background sync</string>
+    <string name="save_sync_method_retroarch">RetroArch Cloud Sync</string>
+    <string name="save_sync_method_off">Off</string>
+    <string name="save_sync_exclude_retroarch">Exclude RetroArch</string>
+    <string name="save_sync_exclude_retroarch_hint">Use RetroArch Cloud Sync for RetroArch and RomMMobileS for other supported emulators.</string>
+    <string name="save_sync_use_one_method">Turn off Cloud Sync in RetroArch while RomMMobileS handles saves on this device.</string>
+    <string name="save_sync_retroarch_copy">Copy WebDAV address</string>
+    <string name="save_sync_retroarch_copied">WebDAV address copied</string>
+    <string name="save_sync_retroarch_open">Open RetroArch</string>
+    <string name="save_sync_retroarch_unavailable">RetroArch is not installed or cannot open.</string>
+    <string name="save_sync_retroarch_steps">RetroArch handles saves and states in this mode. Use RomM 5.4 or newer and RetroArch 1.22 or newer with WebDAV support.\n\nIn RetroArch, open Settings → Saving → Cloud Sync. Choose WebDAV, enter the address above and your RomM username and password. Enable save sync and automatic mode. Turn off destructive sync and configuration sync.\n\nUse matching ROM filenames and sort saves and states by core. Keep the option to write saves and states next to the ROMs off. Open RetroArch and wait for sync before loading a game.</string>
+    <string name="ob_storage_tv_cloud_sync">This TV has no system folder picker. You can browse RomM and set up RetroArch Cloud Sync without a ROM folder. Downloads need a writable ROM folder.</string>
+    <string name="ob_storage_tv_skip">Continue without a ROM folder</string>
     <string name="save_sync_emulator_details">Detected launches</string>
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_diagnostics_hint">State, recent downloads, exportable log</string>
@@ -234,12 +260,12 @@
     <string name="save_sync_missing_scopes">RomM denied save sync access. Sign in again or check the scopes on your client token.</string>
     <string name="save_sync_title">RomM save sync</string>
     <string name="save_sync_enable">Background save sync</string>
-    <string name="save_sync_description">Watch verified RetroArch folders and upload saves and states for matching ROMs.</string>
+    <string name="save_sync_description">RomMMobileS sends the save files you select, game information, and a device identifier to your RomM server. Sync continues when you leave the app.</string>
     <string name="save_sync_watching">Checking save folders…</string>
     <string name="save_sync_paused">Service stopped. Tap to resume.</string>
     <string name="save_sync_no_folders">No verified save folders. Check the emulator folders on this screen.</string>
     <string name="emulator_access_title">Emulator save folders</string>
-    <string name="emulator_access_choose_body">Check the detected folders. Choose a different folder if your core saves somewhere else.</string>
+    <string name="emulator_access_choose_body">Check the detected folders. Choose a different folder if your emulator saves somewhere else.</string>
     <string name="emulator_access_default_saves">Detected saves: %1$s</string>
     <string name="emulator_access_default_states">Detected states: %1$s</string>
     <string name="emulator_access_choose_saves">Choose saves</string>
@@ -248,16 +274,16 @@
     <string name="emulator_access_later">Later</string>
     <string name="emulator_access_esde_folder">Choose the ES-DE data folder to detect your emulator choices.</string>
     <string name="emulator_access_folder_error">Could not keep access to that folder. Choose the ES-DE data folder again.</string>
-    <string name="emulator_access_no_folders">No shared RetroArch save folders found. Check the save directories in RetroArch.</string>
+    <string name="emulator_access_no_folders">No supported emulator save folders found. Check the emulator selected in ES-DE.</string>
     <string name="save_sync_usage_title">Usage Access for automatic restore</string>
-    <string name="save_sync_usage_needed">Allow Usage Access and enable RetroArch Auto Save State. The companion needs both to detect when RetroArch quits.</string>
-    <string name="save_sync_usage_granted">Usage Access granted. Keep Auto Save State enabled in RetroArch.</string>
+    <string name="save_sync_usage_needed">RomMMobileS checks emulator activity on this device before restoring saves. For RetroArch, enable Auto Save State.</string>
+    <string name="save_sync_usage_granted">Usage Access granted. For RetroArch, keep Auto Save State enabled.</string>
     <string name="save_sync_usage_open">Open Usage Access</string>
     <string name="save_sync_now">Sync now</string>
     <string name="save_sync_apply">Apply downloaded saves and states</string>
-    <string name="save_sync_apply_hint">Close RetroArch before applying incoming files.</string>
-    <string name="save_sync_apply_warning">Close RetroArch completely. Confirm both devices use compatible versions of each core before applying states. RomMMobileS keeps a backup of any local file it replaces.</string>
-    <string name="save_sync_apply_confirm">RetroArch is closed</string>
+    <string name="save_sync_apply_hint">Close the emulators before applying incoming files.</string>
+    <string name="save_sync_apply_warning">Close all emulators completely. Use compatible RetroArch cores and matching standalone emulator builds for states. RomMMobileS keeps a recovery copy before replacing a save.</string>
+    <string name="save_sync_apply_confirm">Emulators are closed</string>
     <string name="save_sync_battery">Battery optimization</string>
     <string name="save_sync_battery_exempt">Android reports that RomMMobileS is exempt from battery optimization.</string>
     <string name="save_sync_battery_hint">Open App info. Select Battery, then Unrestricted if available.</string>
@@ -268,7 +294,7 @@
     <string name="save_sync_state_files">Sync save states</string>
     <string name="save_sync_state_files_hint">Sync emulator snapshots. A different core build can reject a state.</string>
     <string name="save_sync_types_off">Select at least one save type to sync.</string>
-    <string name="save_sync_waiting_for_exit">Incoming files are waiting for RetroArch to quit. If they stay pending, force stop RetroArch from Android App info after saving and exiting.</string>
+    <string name="save_sync_waiting_for_exit">Incoming files are waiting for the emulator to close. For standalone emulators, force stop the app from Android App info after saving and exiting.</string>
     <string name="save_sync_recovery_export">Export save recovery copies</string>
     <string name="save_sync_recovery_hint">Keep a copy of the saves preserved before restore or during conflicts.</string>
     <string name="save_sync_recovery_empty">No recovery files were available.</string>
@@ -295,7 +321,7 @@
     <string name="bios_empty">No firmware on the server</string>
     <string name="bios_empty_hint">Add BIOS files to the RomM library to see them here.</string>
     <string name="bios_already_present">Already in the BIOS folder</string>
-    <string name="bios_needs_direct">BIOS download needs All files access and a plain ROM folder path</string>
+    <string name="bios_choose_folder">Choose your emulator’s BIOS folder in Settings.</string>
 
     <!-- onboarding -->
     <string name="ob_step_n">Step %1$d of %2$d</string>
@@ -338,6 +364,7 @@
     <string name="btn_left">Left</string>
     <string name="btn_right">Right</string>
     <string name="ob_server_body">Address of your RomM server. On the home network it is usually an IP and a port; a domain works too.</string>
+    <string name="ob_server_https_body">Enter the HTTPS address of your RomM server.</string>
     <string name="ob_server_advanced">Advanced: Cloudflare Access, plain HTTP</string>
     <string name="ob_server_label">Address</string>
     <string name="ob_server_idle">Type the address to test it</string>
@@ -375,11 +402,12 @@
 
     <!-- root chooser -->
     <string name="root_title">ROM folder</string>
-    <string name="root_allfiles_body">Use the folder picker for access to specific folders. Optional All Files Access enables direct file watching and supports devices without a picker.</string>
-    <string name="root_allfiles_grant">Grant All files access</string>
+    <string name="root_allfiles_body">Allow All Files Access to use a folder path on this device.</string>
+    <string name="root_allfiles_grant">Open All Files Access settings</string>
     <string name="root_allfiles_unavailable">This device does not expose the All files access screen.</string>
     <string name="root_pick_saf">Choose folder</string>
     <string name="root_no_picker">This device has no folder picker: type the path below.</string>
+    <string name="root_picker_required">Android’s folder picker is unavailable on this device.</string>
     <string name="root_manual_empty">Type a path</string>
     <string name="root_manual_invalid">Path not found and cannot be created</string>
 
@@ -400,7 +428,8 @@
     <string name="per_platform_default">Default</string>
     <string name="per_platform_extract">Unpack</string>
     <string name="per_platform_keep">Keep archive</string>
-    <string name="auth_device_desc">Point your phone at the code below and approve there. Nothing to type here.</string>
+    <string name="auth_device_desc">RomMMobileS sends your device model and identifier to your RomM server to request a pairing code. Scan the code with your phone, then approve the connection.</string>
+    <string name="auth_device_request">Generate pairing code</string>
     <string name="auth_password_desc">Your RomM username and password. Typing them on a handheld is slow.</string>
     <string name="auth_token_desc">Paste a Client API token created in the RomM web app, if you already have one.</string>
     <string name="root_pick_body">Pick the folder your frontend scans, for example ROMs on internal memory or on the SD card.</string>

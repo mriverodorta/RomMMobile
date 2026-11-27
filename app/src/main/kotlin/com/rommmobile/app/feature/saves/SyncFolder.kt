@@ -45,9 +45,11 @@ internal data class SyncFile(val folder: SyncFolder, val name: String) {
 }
 
 internal fun resolveSyncFolder(context: Context, path: String, writable: Boolean): SyncFolder? {
-    if (StorageLocations.hasAllFilesAccess(context) && File(path).isDirectory) {
+    val grant = StorageLocations.treeCovering(context, path, writable)
+    if (grant?.first?.treeUri?.let { Uri.parse(it).authority } != StorageLocations.DOLPHIN_DOCUMENTS &&
+        StorageLocations.hasAllFilesAccess(context) && File(path).isDirectory) {
         return SyncFolder(path, DirectFileGateway(StorageRoot.Direct(path)), "")
     }
-    val (root, relative) = StorageLocations.treeCovering(context, path, writable) ?: return null
+    val (root, relative) = grant ?: return null
     return SyncFolder(path, SafFileGateway(context, root), relative)
 }

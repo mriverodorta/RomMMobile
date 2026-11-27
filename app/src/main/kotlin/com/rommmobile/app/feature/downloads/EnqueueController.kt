@@ -2,10 +2,14 @@ package com.rommmobile.app.feature.downloads
 
 import android.content.Context
 import androidx.compose.runtime.Immutable
+import com.rommmobile.app.BuildConfig
 import com.rommmobile.app.R
 import com.rommmobile.app.core.design.Toaster
+import com.rommmobile.app.core.design.isTelevision
+import com.rommmobile.app.core.storage.StorageLocations
 import com.rommmobile.app.data.mapping.MappingRepository
 import com.rommmobile.app.data.mapping.Resolution
+import com.rommmobile.app.data.prefs.SettingsStore
 import com.rommmobile.app.data.repo.DownloadRepository
 import com.rommmobile.app.data.repo.EnqueueResult
 import com.rommmobile.app.data.repo.Platform
@@ -14,6 +18,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 /** A download waiting for a one-time folder decision. */
@@ -29,7 +34,13 @@ class EnqueueController @Inject constructor(
     private val downloads: DownloadRepository,
     private val mapping: MappingRepository,
     private val toaster: Toaster,
+    settings: SettingsStore,
 ) {
+    val noTvFolderPicker: Boolean
+        get() = !BuildConfig.ALL_FILES_ACCESS_AVAILABLE && context.isTelevision() && !StorageLocations.canOpenTree(context)
+
+    val tvDownloadsUnavailable = settings.storageRoot.map { it == null && noTvFolderPicker }
+
     private val _pending = MutableStateFlow<PendingFolder?>(null)
     val pending: StateFlow<PendingFolder?> = _pending.asStateFlow()
 
@@ -43,7 +54,10 @@ class EnqueueController @Inject constructor(
             EnqueueResult.AlreadyQueued -> toaster.show(context.getString(R.string.toast_already_queued))
             EnqueueResult.AlreadyPresent -> _confirmRedownload.value = rom
             is EnqueueResult.NeedsFolder -> _pending.value = PendingFolder(rom, r.platform, r.resolution)
-            EnqueueResult.NoRoot -> toaster.show(context.getString(R.string.toast_no_root), isError = true)
+            EnqueueResult.NoRoot -> toaster.show(
+                context.getString(if (noTvFolderPicker) R.string.download_no_tv_folder_picker else R.string.toast_no_root),
+                isError = true,
+            )
             EnqueueResult.NotConfigured -> toaster.show(context.getString(R.string.error_not_configured), isError = true)
         }
     }

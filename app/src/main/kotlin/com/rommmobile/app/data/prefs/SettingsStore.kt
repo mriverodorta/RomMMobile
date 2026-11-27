@@ -10,7 +10,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.rommmobile.app.core.design.ThemeMode
+import com.rommmobile.app.core.design.isTelevision
 import com.rommmobile.app.core.input.ButtonMap
+import com.rommmobile.app.core.storage.StorageLocations
 import com.rommmobile.app.core.storage.StorageRoot
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +26,19 @@ import javax.inject.Singleton
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 enum class ViewMode { GRID, LIST }
+
+enum class SaveSyncMethod(val id: String) {
+    ROMMMOBILES("rommmobiles"), RETROARCH("retroarch"), OFF("off");
+
+    companion object {
+        internal fun restore(id: String?, previouslyEnabled: Boolean?, preferRetroArch: Boolean): SaveSyncMethod =
+            entries.firstOrNull { it.id == id } ?: when (previouslyEnabled) {
+                true -> ROMMMOBILES
+                false -> OFF
+                null -> if (preferRetroArch) RETROARCH else OFF
+            }
+    }
+}
 
 enum class SortField(val apiValue: String) {
     NAME("name"),
@@ -65,13 +80,18 @@ data class Settings(
     val folderPerGameSlugs: Set<String>,
     val screenMarginDp: Int,
     val themeMode: ThemeMode,
-    val biosPath: String?,
+    val biosFolder: StorageRoot?,
     val allowInsecureRemote: Boolean,
     val extractOverrides: Map<String, Boolean>,
     val buttonMap: ButtonMap,
     /** True once a map was recorded or edited by the user: the wizard then stops offering to record one. */
     val buttonMapRecorded: Boolean,
-)
+) {
+    val firmwareRoot: StorageRoot?
+        get() = biosFolder ?: (storageRoot as? StorageRoot.Direct)?.let {
+            StorageRoot.Direct(it.path.substringBeforeLast('/') + "/RetroArch/system")
+        }
+}
 
 @Singleton
 class SettingsStore @Inject constructor(@ApplicationContext private val context: Context) {
@@ -85,6 +105,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val syncBatterySaves = booleanPreferencesKey("sync_battery_saves")
         val syncSaveStates = booleanPreferencesKey("sync_save_states")
         val saveSyncEnabled = booleanPreferencesKey("save_sync_enabled")
+        val saveSyncMethod = stringPreferencesKey("save_sync_method")
+        val excludeRetroArch = booleanPreferencesKey("save_sync_exclude_retroarch")
         val esdeDataTree = stringPreferencesKey("esde_data_tree")
         val storageRoot = stringPreferencesKey("storage_root")
         val viewMode = stringPreferencesKey("view_mode")
@@ -124,7 +146,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             folderPerGameSlugs = if (p[K.folderPerGameCustomized] == true) (p[K.folderPerGame] ?: emptySet()) else DEFAULT_FOLDER_PER_GAME,
             screenMarginDp = p[K.screenMargin] ?: 0,
             themeMode = p[K.themeMode]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.DARK,
-            biosPath = p[K.biosPath],
+            biosFolder = p[K.biosPath]?.takeIf { it.isNotBlank() }?.let { StorageRoot.parse(it) ?: StorageRoot.Direct(it) },
             allowInsecureRemote = p[K.allowInsecureRemote] ?: false,
             extractOverrides = (p[K.extractOverrides] ?: emptySet()).mapNotNull { e ->
                 val i = e.indexOf('='); if (i <= 0) null else e.substring(0, i) to e.substring(i + 1).toBoolean()
@@ -154,8 +176,26 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         it[if (state) K.syncSaveStates else K.syncBatterySaves] = enabled
     }
 
-    val saveSyncEnabled: Flow<Boolean> = ds.data.map { it[K.saveSyncEnabled] ?: false }.distinctUntilChanged()
-    suspend fun setSaveSyncEnabled(enabled: Boolean) = ds.edit { it[K.saveSyncEnabled] = enabled }
+    private val preferRetroArch by lazy { context.isTelevision() && !StorageLocations.canOpenTree(context) }
+    val saveSyncMethod: Flow<SaveSyncMethod> = ds.data.map { p ->
+        SaveSyncMethod.restore(p[K.saveSyncMethod], p[K.saveSyncEnabled], preferRetroArch)
+    }.distinctUntilChanged()
+    val saveSyncEnabled: Flow<Boolean> = saveSyncMethod.map { it == SaveSyncMethod.ROMMMOBILES }.distinctUntilChanged()
+    suspend fun setSaveSyncMethod(method: SaveSyncMethod) = ds.edit {
+        it[K.saveSyncMethod] = method.id
+        // An older APK only reads this key. Keep it from starting a second watcher on downgrade.
+        it[K.saveSyncEnabled] = method == SaveSyncMethod.ROMMMOBILES && it[K.excludeRetroArch] != true
+    }
+
+    val excludeRetroArch: Flow<Boolean> = ds.data.map { it[K.excludeRetroArch] ?: false }.distinctUntilChanged()
+
+    suspend fun setExcludeRetroArch(excluded: Boolean) = ds.edit {
+        it[K.excludeRetroArch] = excluded
+        if (it[K.saveSyncMethod] == SaveSyncMethod.ROMMMOBILES.id || it[K.saveSyncMethod] == null) {
+            it[K.saveSyncMethod] = SaveSyncMethod.ROMMMOBILES.id
+            it[K.saveSyncEnabled] = !excluded
+        }
+    }
 
     suspend fun esdeDataTree(): String? = ds.data.first()[K.esdeDataTree]
     suspend fun setEsdeDataTree(uri: String) = ds.edit { it[K.esdeDataTree] = uri }
@@ -174,7 +214,13 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
     suspend fun setFolderPerGame(slugs: Set<String>) = ds.edit { it[K.folderPerGame] = slugs; it[K.folderPerGameCustomized] = true }
     suspend fun setScreenMargin(v: Int) = ds.edit { it[K.screenMargin] = v.coerceIn(0, 16) }
     suspend fun setThemeMode(v: ThemeMode) = ds.edit { it[K.themeMode] = v.name }
-    suspend fun setBiosPath(v: String?) = ds.edit { if (v.isNullOrBlank()) it.remove(K.biosPath) else it[K.biosPath] = v }
+    suspend fun setBiosFolder(folder: StorageRoot?) = ds.edit {
+        when (folder) {
+            null -> it.remove(K.biosPath)
+            is StorageRoot.Direct -> it[K.biosPath] = folder.path
+            is StorageRoot.Saf -> it[K.biosPath] = folder.serialize()
+        }
+    }
     suspend fun setAllowInsecureRemote(v: Boolean) = ds.edit { it[K.allowInsecureRemote] = v }
     suspend fun setButtonMap(v: ButtonMap) = ds.edit { it[K.buttonMap] = v.encode(); it[K.buttonMapRecorded] = true }
     suspend fun setExtractOverride(slug: String, extract: Boolean?) = ds.edit { p ->

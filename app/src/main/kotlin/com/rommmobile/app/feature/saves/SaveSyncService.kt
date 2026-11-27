@@ -30,6 +30,7 @@ import com.rommmobile.app.core.network.ApiException
 import com.rommmobile.app.core.network.ApiErrorKind
 import com.rommmobile.app.core.util.FileLogger
 import com.rommmobile.app.data.prefs.SettingsStore
+import com.rommmobile.app.data.prefs.SaveSyncMethod
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -46,6 +47,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -56,35 +59,56 @@ data class SaveSyncStatus(val running: Boolean = false, val result: SaveSyncResu
 class SaveSyncControl @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settings: SettingsStore,
+    private val engine: SaveSyncEngine,
     private val log: FileLogger,
 ) {
     private val _status = MutableStateFlow(SaveSyncStatus())
     val status = _status.asStateFlow()
+    val method = settings.saveSyncMethod
     val enabled = settings.saveSyncEnabled
     val batteryEnabled = settings.syncBatterySaves
     val statesEnabled = settings.syncSaveStates
+    val excludeRetroArch = settings.excludeRetroArch
+
+    suspend fun setExcludeRetroArch(excluded: Boolean) = methodLock.withLock {
+        engine.setExcludeRetroArch(excluded)
+        syncNow()
+    }
 
     suspend fun setSaveTypeEnabled(state: Boolean, on: Boolean) {
         settings.setSaveTypeEnabled(state, on)
-        if (enabled.first()) syncNow()
+        syncNow()
+    }
+
+    internal suspend fun selectEmulatorFolder(key: String, state: Boolean, path: String): Boolean =
+        engine.selectEmulatorFolder(key, state, path)
+
+    internal fun gameIdOverride(profile: String, hash: String): String? = engine.gameIdOverride(profile, hash)
+
+    internal suspend fun setGameIdOverride(profile: String, hash: String, id: String?) {
+        engine.setGameIdOverride(profile, hash, id)
+        syncNow()
     }
 
     suspend fun romDownloaded() {
-        if (enabled.first()) syncNow()
+        syncNow()
     }
 
     internal fun report(status: SaveSyncStatus) { _status.value = status }
     private val workManager get() = WorkManager.getInstance(context)
     private val connected = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-    suspend fun setEnabled(on: Boolean) {
-        settings.setSaveSyncEnabled(on)
-        if (on) {
+    private val methodLock = Mutex()
+
+    suspend fun setMethod(value: SaveSyncMethod) = methodLock.withLock {
+        engine.setMethod(value)
+        if (value == SaveSyncMethod.ROMMMOBILES) {
             startIfEnabled()
         } else {
             context.stopService(Intent(context, SaveSyncService::class.java))
             workManager.cancelUniqueWork(STARTUP_WORK)
             workManager.cancelUniqueWork(PERIODIC_WORK)
+            report(SaveSyncStatus())
         }
     }
 
@@ -114,7 +138,9 @@ class SaveSyncControl @Inject constructor(
         workManager.enqueueUniquePeriodicWork(PERIODIC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    fun syncNow(apply: Boolean = false) = start(if (apply) SaveSyncService.APPLY else SaveSyncService.SCAN)
+    suspend fun syncNow(apply: Boolean = false) {
+        if (enabled.first()) start(if (apply) SaveSyncService.APPLY else SaveSyncService.SCAN)
+    }
 
     companion object {
         private const val STARTUP_WORK = "save-sync-startup"
@@ -225,7 +251,7 @@ class SaveSyncService : Service() {
         val folders = watched.mapNotNull { it.path }.toSet()
         for (removed in observers.keys - folders) observers.remove(removed)?.stopWatching()
         for (folder in folders - observers.keys) {
-            val watcher = object : FileObserver(folder, CLOSE_WRITE or MOVED_TO or DELETE_SELF or MOVE_SELF) {
+            val watcher = object : FileObserver(folder, CREATE or CLOSE_WRITE or MOVED_TO or MOVED_FROM or DELETE or DELETE_SELF or MOVE_SELF) {
                 override fun onEvent(event: Int, path: String?) {
                     if (event and (DELETE_SELF or MOVE_SELF) != 0) {
                         synchronized(this@SaveSyncService) {
